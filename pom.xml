@@ -1,0 +1,71 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>studio.plugglab</groupId>
+    <artifactId>migrating-markets</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>MigratingMarkets</name>
+    <description>Advanced traveling caravan market system for Paper 1.21</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
+            <version>1.21.1-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.MilkBowl</groupId>
+            <artifactId>VaultAPI</artifactId>
+            <version>1.7.1</version>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
+        <!--
+          LuckyBlock 2.0's API jar, bundled locally in libs/ since it's not
+          published to a public Maven repo. System-scoped: available at
+          compile time, NOT bundled into our jar (the real LuckyBlock
+          plugin provides it at runtime, same as paper-api/VaultAPI above
+          being "provided"). If you update LuckyBlock, replace the jar in
+          libs/ and bump the version below to match.
+        -->
+        <dependency>
+            <groupId>com.lucky</groupId>
+            <artifactId>luckyblock</artifactId>
+            <version>2.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/libs/LuckyBlock-2.0.jar</systemPath>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>${project.name}-${project.version}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

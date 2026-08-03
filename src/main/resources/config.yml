@@ -1,0 +1,232 @@
+# MigratingMarkets by PluggLab Studio
+# ------------------------------------------------------------------
+# Advanced traveling caravan market system.
+# Each caravan follows a route of waypoints, stops for a configurable
+# number of in-game "market days", then moves to the next stop.
+# Prices react to real supply/demand and decay back toward base over time.
+# Every item also has a level (1-5): higher levels restock deeper each
+# market day (stock cap = level * settings.stock-per-level).
+
+settings:
+  # How many real-world minutes make up one "market day" tick.
+  minutes-per-market-day: 20
+  # How many market-days a caravan lingers at each stop before moving on.
+  days-per-stop: 3
+  # Radius (blocks) players must be within to open the market GUI.
+  interaction-radius: 4
+  # Radius (blocks) around a traveling caravan considered "escort range".
+  escort-radius: 12
+  # Broadcast messages to the whole server when a caravan arrives/departs.
+  broadcast-server-wide: true
+  # Exact next destination is hidden; players only get a vague directional hint.
+  vague-destination-hints: true
+  # Price change per unit bought/sold (percentage, e.g. 0.02 = 2%).
+  price-shift-per-trade: 0.02
+  # How much prices decay back toward base per market-day (percentage).
+  price-decay-per-day: 0.05
+  # Max multiplier prices can swing to, above/below base (e.g. 2.5 = up to 250%/40%).
+  max-price-multiplier: 2.5
+  min-price-multiplier: 0.4
+  # Stock cap per item = item level * this number, fully replenished each market-day.
+  stock-per-level: 6
+
+# Currency the market buys/sells in.
+#   provider: emerald  -> uses physical emeralds in the player's inventory (default, no dependency)
+#   provider: vault    -> uses whatever economy plugin Vault has registered (Essentials, CMI, etc)
+#                         falls back to emeralds automatically if Vault/an economy plugin isn't found
+economy:
+  provider: emerald
+
+# Bridge to PluggLab Studio's LuckyBlock 2.0 plugin, using its real
+# developer API (com.lucky.luckyblock.api.LuckyBlockAPI) — the API jar is
+# bundled in libs/ at build time, and the actual LuckyBlock plugin
+# provides the implementation at runtime. Items in the "fortune"
+# specialty below use `rarity: COMMON|RARE|EPIC|LEGENDARY` to grant a
+# real lucky block ItemStack (sellable, just like any other item).
+#
+# give-command-template below is kept only as a generic fallback
+# mechanism for bridging to some OTHER command-driven plugin via
+# `give-command` on an item — it is NOT used by the `rarity`-based
+# fortune items above, which go through the real API directly.
+lucky-block-bridge:
+  plugin-name: LuckyBlock
+  give-command-template: "lb give %player% %amount%"
+
+routes:
+  eastern-loop:
+    display-name: "&6Eastern Caravan"
+    specialty: blacksmith
+    waypoints:
+      - world: world
+        x: 100
+        y: 70
+        z: 100
+        name: "Ridgeway Crossing"
+      - world: world
+        x: 250
+        y: 68
+        z: 40
+        name: "Hollow Bridge"
+      - world: world
+        x: 180
+        y: 72
+        z: -120
+        name: "Ashfield"
+
+  wandering-enchanter:
+    display-name: "&5Wandering Enchanter"
+    specialty: enchanter
+    waypoints:
+      - world: world
+        x: -80
+        y: 65
+        z: 200
+        name: "Moonlit Hollow"
+      - world: world
+        x: -220
+        y: 70
+        z: 90
+        name: "Duskmere"
+
+  exotic-trader:
+    display-name: "&bExotic Trader"
+    specialty: exotic
+    waypoints:
+      - world: world
+        x: 300
+        y: 64
+        z: 300
+        name: "Saltmarsh Docks"
+      - world: world
+        x: 400
+        y: 80
+        z: 150
+        name: "Highspire"
+      - world: world
+        x: 320
+        y: 70
+        z: -50
+        name: "Redstone Bazaar"
+
+  # Only spawns if the plugin named under lucky-block-bridge.plugin-name is installed.
+  fortune-caravan:
+    display-name: "&dTraveling Fortune Teller"
+    specialty: fortune
+    requires-plugin: LuckyBlock
+    waypoints:
+      - world: world
+        x: 60
+        y: 70
+        z: -200
+        name: "Gambler's Rest"
+      - world: world
+        x: -140
+        y: 68
+        z: -260
+        name: "Wishing Well"
+
+specialties:
+  blacksmith:
+    items:
+      - { material: IRON_INGOT, base-price: 6, category: material, level: 1 }
+      - { material: COAL, base-price: 2, category: material, level: 1 }
+      - { material: COPPER_INGOT, base-price: 3, category: material, level: 1 }
+      - { material: FLINT, base-price: 1.5, category: material, level: 1 }
+      - { material: LEATHER, base-price: 3, category: material, level: 1 }
+      - { material: GOLD_INGOT, base-price: 14, category: material, level: 2 }
+      - { material: REDSTONE, base-price: 2, category: material, level: 1 }
+      - { material: QUARTZ, base-price: 4, category: material, level: 2 }
+      - { material: IRON_SWORD, base-price: 25, category: weapon, level: 2 }
+      - { material: IRON_AXE, base-price: 25, category: tool, level: 2 }
+      - { material: IRON_PICKAXE, base-price: 22, category: tool, level: 2 }
+      - { material: BOW, base-price: 20, category: weapon, level: 2 }
+      - { material: CROSSBOW, base-price: 30, category: weapon, level: 2 }
+      - { material: SHIELD, base-price: 45, category: gear, level: 2 }
+      - { material: IRON_CHESTPLATE, base-price: 90, category: gear, level: 3 }
+      - { material: IRON_HELMET, base-price: 55, category: gear, level: 3 }
+      - { material: IRON_LEGGINGS, base-price: 80, category: gear, level: 3 }
+      - { material: IRON_BOOTS, base-price: 50, category: gear, level: 3 }
+      - { material: DIAMOND, base-price: 55, category: material, level: 3 }
+      - { material: DIAMOND_SWORD, base-price: 140, category: weapon, level: 4 }
+      - { material: DIAMOND_CHESTPLATE, base-price: 220, category: gear, level: 4 }
+      - { material: ANVIL, base-price: 120, category: tool, level: 4 }
+      - { material: NETHERITE_SCRAP, base-price: 180, category: material, level: 5 }
+      - { material: NETHERITE_INGOT, base-price: 320, category: material, level: 5 }
+
+  enchanter:
+    items:
+      - { material: BOOK, base-price: 3, category: material, level: 1 }
+      - { material: LAPIS_LAZULI, base-price: 4, category: material, level: 1 }
+      - { material: STRING, base-price: 1.5, category: material, level: 1 }
+      - { material: SPIDER_EYE, base-price: 5, category: material, level: 1 }
+      - { material: GLASS_BOTTLE, base-price: 1, category: material, level: 1 }
+      - { material: BLAZE_POWDER, base-price: 10, category: material, level: 2 }
+      - { material: FERMENTED_SPIDER_EYE, base-price: 8, category: material, level: 2 }
+      - { material: EXPERIENCE_BOTTLE, base-price: 12, category: magic, level: 2 }
+      - { material: NETHER_WART, base-price: 3, category: material, level: 2 }
+      - { material: GLOWSTONE_DUST, base-price: 4, category: material, level: 2 }
+      - { material: ENDER_PEARL, base-price: 20, category: magic, level: 3 }
+      - { material: PHANTOM_MEMBRANE, base-price: 25, category: material, level: 3 }
+      - { material: ENCHANTED_BOOK, base-price: 150, category: magic, level: 4 }
+      - { material: END_CRYSTAL, base-price: 200, category: rare, level: 4 }
+      - { material: NETHER_STAR, base-price: 450, category: rare, level: 5 }
+      - { material: DRAGON_BREATH, base-price: 80, category: magic, level: 4 }
+
+  exotic:
+    items:
+      - { material: KELP, base-price: 1, category: material, level: 1 }
+      - { material: PRISMARINE_SHARD, base-price: 5, category: material, level: 1 }
+      - { material: PRISMARINE_CRYSTALS, base-price: 6, category: material, level: 1 }
+      - { material: TROPICAL_FISH, base-price: 4, category: material, level: 1 }
+      - { material: PUFFERFISH, base-price: 3, category: material, level: 1 }
+      - { material: NAUTILUS_SHELL, base-price: 40, category: material, level: 2 }
+      - { material: GHAST_TEAR, base-price: 60, category: material, level: 2 }
+      - { material: MAGMA_CREAM, base-price: 15, category: material, level: 2 }
+      - { material: SHULKER_SHELL, base-price: 130, category: rare, level: 3 }
+      - { material: TURTLE_HELMET, base-price: 70, category: gear, level: 3 }
+      - { material: TRIDENT, base-price: 260, category: weapon, level: 4 }
+      - { material: HEART_OF_THE_SEA, base-price: 500, category: rare, level: 4 }
+      - { material: TOTEM_OF_UNDYING, base-price: 350, category: rare, level: 4 }
+      - { material: ELYTRA, base-price: 600, category: rare, level: 5 }
+      - { material: DRAGON_HEAD, base-price: 800, category: rare, level: 5 }
+
+  # Bridged specialty: buying one calls LuckyBlockAPI.buildLuckyBlockItem()
+  # directly and hands over a real, sellable lucky block item — no
+  # console commands involved. `material` is just a fallback GUI icon in
+  # case the bridge is unavailable when the menu renders.
+  fortune:
+    items:
+      - material: HAY_BLOCK
+        base-price: 30
+        category: lucky-block
+        level: 1
+        rarity: COMMON
+      - material: LAPIS_BLOCK
+        base-price: 90
+        category: lucky-block
+        level: 3
+        rarity: RARE
+      - material: OBSIDIAN
+        base-price: 180
+        category: lucky-block
+        level: 4
+        rarity: EPIC
+      - material: GOLD_BLOCK
+        base-price: 320
+        category: lucky-block
+        level: 5
+        rarity: LEGENDARY
+
+# Escort reputation tiers: kills of hostile mobs near a traveling caravan
+# earn reputation with that caravan, unlocking discounts at its next stop.
+escort-reputation:
+  tiers:
+    - threshold: 5
+      discount: 0.05
+      title: "Trusted Escort"
+    - threshold: 15
+      discount: 0.10
+      title: "Caravan Guardian"
+    - threshold: 30
+      discount: 0.18
+      title: "Legendary Warden"
