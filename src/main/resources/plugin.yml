@@ -5,23 +5,31 @@ api-version: '1.21'
 author: PluggLab Studio
 description: Advanced traveling caravan market system with dynamic pricing, escort reputation, and multi-specialty NPC caravans.
 website: https://plugglab.studio
-softdepend: [Vault, LuckyEngine]
+# LuckyBlock is the plugin name the LuckyBlock 2.0 jar registers under;
+# LuckyEngine is kept for servers that run it under that name.
+softdepend: [Vault, LuckyBlock, LuckyEngine, PlaceholderAPI]
 
 commands:
   market:
     description: Interact with the traveling market
-    usage: /market <info|browse|track>
+    usage: /market <info|browse|track|where [id]|stopwhere>
     permission: migratingmarkets.use
   caravanadmin:
     description: Admin controls for caravans
-    usage: /caravanadmin <reload|spawn|teleport|forcemove|list|stop>
+    usage: /caravanadmin <reload|list|info|forcemove|teleport|goto|restock|stop|edit|additem|removeitem|setprice|setlevel|createroute|addwaypoint|removewaypoint|deleteroute>
     permission: migratingmarkets.admin
     aliases: [cadmin]
 
 permissions:
   migratingmarkets.use:
-    description: Allows interacting with caravans and markets
+    description: Allows interacting with caravans and markets (trading, /market)
+    default: true
+  migratingmarkets.notify:
+    description: Receives caravan arrival/departure announcements (chat, title, sound)
     default: true
   migratingmarkets.admin:
-    description: Allows managing caravan routes and state
+    description: Allows managing caravan routes, shops and state (/caravanadmin), and receives update notices
     default: op
+    children:
+      migratingmarkets.use: true
+      migratingmarkets.notify: true

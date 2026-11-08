@@ -2,7 +2,6 @@ package studio.plugglab.migratingmarkets.listeners;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
@@ -45,7 +44,7 @@ public class EscortListener implements Listener {
             if (caravan.getState() != Caravan.State.TRAVELING || caravan.getEntityId() == null) {
                 continue;
             }
-            var entity = Bukkit.getEntity(caravan.getEntityId());
+            var entity = caravanManager.getLiveEntity(caravan);
             if (entity == null || !entity.getWorld().equals(dead.getWorld())) {
                 continue;
             }
@@ -61,9 +60,12 @@ public class EscortListener implements Listener {
     private void announceNewTier(Player player, Caravan caravan, int before, int after) {
         for (EscortTier tier : configManager.getEscortTiers()) {
             if (before < tier.threshold && after >= tier.threshold) {
-                String message = "You are now a " + tier.title + " of the " + caravan.getDisplayName()
-                        + "! (" + (int) (tier.discount * 100) + "% discount)";
-                player.sendMessage(Component.text(message).color(NamedTextColor.GOLD));
+                // Display name is '&'-coded — it must be parsed, not concatenated
+                // as plain text (that printed literal "&6Eastern Caravan").
+                player.sendMessage(Component.text("You are now a " + tier.title + " of the ").color(NamedTextColor.GOLD)
+                        .append(caravan.getDisplayNameComponent())
+                        .append(Component.text("! (" + Math.round(tier.discount * 100) + "% discount)")
+                                .color(NamedTextColor.GOLD)));
                 return;
             }
         }

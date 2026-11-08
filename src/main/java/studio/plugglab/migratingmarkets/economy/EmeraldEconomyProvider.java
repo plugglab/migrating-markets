@@ -49,6 +49,12 @@ public class EmeraldEconomyProvider implements EconomyProvider {
     }
 
     @Override
+    public boolean refund(Player player, double amount) {
+        // withdraw() rounds UP, so the refund must too (deposit rounds down).
+        return deposit(player, Math.ceil(amount));
+    }
+
+    @Override
     public String format(double amount) {
         return (long) Math.ceil(amount) + " emeralds";
     }

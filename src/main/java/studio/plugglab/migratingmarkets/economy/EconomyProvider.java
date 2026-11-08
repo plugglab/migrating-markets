@@ -16,6 +16,15 @@ public interface EconomyProvider {
     /** Returns true if the deposit succeeded. */
     boolean deposit(Player player, double amount);
 
+    /**
+     * Gives back exactly what {@link #withdraw} took for this amount (used
+     * when a purchase can't be delivered). Defaults to deposit; providers
+     * that round on withdraw override it so refunds are never short.
+     */
+    default boolean refund(Player player, double amount) {
+        return deposit(player, amount);
+    }
+
     /** Human-readable amount, e.g. "12 emeralds" or "$12.00". */
     String format(double amount);
 

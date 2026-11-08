@@ -1,7 +1,9 @@
 package studio.plugglab.migratingmarkets;
 
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 import studio.plugglab.migratingmarkets.caravan.CaravanManager;
+import studio.plugglab.migratingmarkets.caravan.CaravanTracker;
 import studio.plugglab.migratingmarkets.commands.CaravanAdminCommand;
 import studio.plugglab.migratingmarkets.commands.MarketCommand;
 import studio.plugglab.migratingmarkets.data.CustomRouteStore;
@@ -9,8 +11,10 @@ import studio.plugglab.migratingmarkets.data.DataStore;
 import studio.plugglab.migratingmarkets.economy.EconomyProvider;
 import studio.plugglab.migratingmarkets.economy.EmeraldEconomyProvider;
 import studio.plugglab.migratingmarkets.economy.VaultEconomyProvider;
+import studio.plugglab.migratingmarkets.listeners.CaravanEntityListener;
 import studio.plugglab.migratingmarkets.listeners.CaravanInteractListener;
 import studio.plugglab.migratingmarkets.listeners.EscortListener;
+import studio.plugglab.migratingmarkets.listeners.JoinListener;
 import studio.plugglab.migratingmarkets.listeners.MarketGUIListener;
 import studio.plugglab.migratingmarkets.listeners.ShopEditorListener;
 import studio.plugglab.migratingmarkets.luckyblock.LuckyBlockBridge;
@@ -25,8 +29,10 @@ public class MigratingMarkets extends JavaPlugin {
     private ConfigManager configManager;
     private DataStore dataStore;
     private CaravanManager caravanManager;
+    private CaravanTracker tracker;
     private EconomyProvider economyProvider;
     private LuckyBlockBridge luckyBlockBridge;
+    private UpdateChecker updateChecker;
 
     @Override
     public void onEnable() {
@@ -38,44 +44,71 @@ public class MigratingMarkets extends JavaPlugin {
 
         dataStore = new DataStore(this);
         CustomRouteStore customRouteStore = new CustomRouteStore(this);
-        caravanManager = new CaravanManager(this, configManager, dataStore, customRouteStore);
+        caravanManager = new CaravanManager(this, configManager, dataStore, customRouteStore, luckyBlockBridge);
         caravanManager.initialize();
 
-        getServer().getPluginManager().registerEvents(
-                new CaravanInteractListener(caravanManager, economyProvider, luckyBlockBridge), this);
-        getServer().getPluginManager().registerEvents(
-                new MarketGUIListener(caravanManager, configManager, economyProvider, luckyBlockBridge), this);
-        getServer().getPluginManager().registerEvents(
-                new EscortListener(caravanManager, configManager), this);
-        getServer().getPluginManager().registerEvents(
-                new ShopEditorListener(configManager), this);
+        tracker = new CaravanTracker(this, caravanManager, configManager);
+        tracker.start();
 
-        MarketCommand marketCommand = new MarketCommand(caravanManager, configManager, economyProvider, luckyBlockBridge);
-        getCommand("market").setExecutor(marketCommand);
-        getCommand("market").setTabCompleter(marketCommand);
+        var pm = getServer().getPluginManager();
+        pm.registerEvents(new CaravanInteractListener(caravanManager, configManager, economyProvider, luckyBlockBridge), this);
+        pm.registerEvents(new MarketGUIListener(caravanManager, configManager, economyProvider, luckyBlockBridge), this);
+        pm.registerEvents(new EscortListener(caravanManager, configManager), this);
+        pm.registerEvents(new ShopEditorListener(caravanManager, configManager), this);
+        pm.registerEvents(new CaravanEntityListener(caravanManager), this);
+        pm.registerEvents(new JoinListener(this), this);
 
-        CaravanAdminCommand adminCommand = new CaravanAdminCommand(caravanManager, configManager);
-        getCommand("caravanadmin").setExecutor(adminCommand);
-        getCommand("caravanadmin").setTabCompleter(adminCommand);
+        MarketCommand marketCommand = new MarketCommand(caravanManager, configManager, economyProvider,
+                luckyBlockBridge, tracker);
+        bind("market", marketCommand, marketCommand);
+
+        CaravanAdminCommand adminCommand = new CaravanAdminCommand(this, caravanManager, configManager);
+        bind("caravanadmin", adminCommand, adminCommand);
+
+        if (pm.isPluginEnabled("PlaceholderAPI")) {
+            try {
+                new studio.plugglab.migratingmarkets.hooks.MarketPlaceholders(this, caravanManager).register();
+                getLogger().info("Hooked into PlaceholderAPI (%migratingmarkets_...% placeholders).");
+            } catch (LinkageError | RuntimeException e) {
+                getLogger().warning("PlaceholderAPI is installed but the hook failed: " + e);
+            }
+        }
 
         if (luckyBlockBridge.isAvailable()) {
-            getLogger().info("Lucky-block bridge active — found '" + configManager.getLuckyPluginName() + "'.");
+            getLogger().info("Lucky-block bridge active — LuckyBlock API found.");
         } else {
-            getLogger().warning("Lucky-block bridge inactive — LuckyBlockAPI.getOrNull() returned null. "
-                    + "The fortune-caravan route (requires-plugin: " + configManager.getLuckyPluginName()
-                    + ") will not spawn. Check /plugins for the exact name of your installed lucky-block plugin "
-                    + "and make sure it matches lucky-block-bridge.plugin-name in config.yml.");
+            getLogger().info("Lucky-block bridge inactive (LuckyBlock not installed) — the fortune caravan "
+                    + "(requires-plugin: " + configManager.getLuckyPluginName() + ") will not spawn.");
+        }
+
+        if (configManager.isUpdateCheckerEnabled()) {
+            updateChecker = new UpdateChecker(this);
+            updateChecker.check();
         }
 
         getLogger().info("MigratingMarkets enabled — " + caravanManager.getCaravans().size()
                 + " caravan(s) loaded, economy: " + economyProvider.currencyName() + ". (PluggLab Studio)");
     }
 
+    private void bind(String name, org.bukkit.command.CommandExecutor executor, org.bukkit.command.TabCompleter completer) {
+        PluginCommand command = getCommand(name);
+        if (command == null) {
+            getLogger().severe("Command '" + name + "' is missing from plugin.yml!");
+            return;
+        }
+        command.setExecutor(executor);
+        command.setTabCompleter(completer);
+    }
+
     private EconomyProvider setupEconomy() {
         if ("vault".equalsIgnoreCase(configManager.getEconomyProvider())) {
-            VaultEconomyProvider vault = VaultEconomyProvider.tryCreate(this);
-            if (vault != null) {
-                return vault;
+            try {
+                VaultEconomyProvider vault = VaultEconomyProvider.tryCreate(this);
+                if (vault != null) {
+                    return vault;
+                }
+            } catch (LinkageError e) {
+                // Vault classes not present at all
             }
             getLogger().warning("economy.provider is set to 'vault' but no Vault economy plugin was found — "
                     + "falling back to emeralds.");
@@ -85,6 +118,9 @@ public class MigratingMarkets extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (tracker != null) {
+            tracker.stop();
+        }
         if (caravanManager != null) {
             caravanManager.shutdown();
         }
@@ -99,7 +135,15 @@ public class MigratingMarkets extends JavaPlugin {
         return caravanManager;
     }
 
+    public CaravanTracker getTracker() {
+        return tracker;
+    }
+
     public EconomyProvider getEconomyProvider() {
         return economyProvider;
+    }
+
+    public UpdateChecker getUpdateChecker() {
+        return updateChecker;
     }
 }

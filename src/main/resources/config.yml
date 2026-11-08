@@ -37,6 +37,77 @@ settings:
   # of letting anyone buy a level-5 item on their first visit.
   purchases-per-customer-level: 8
   max-customer-level: 5
+  # Fraction of the current price a caravan pays when buying items back.
+  sell-price-ratio: 0.5
+  # Whether worn/damaged tools and armor can be sold back (at full price).
+  allow-selling-damaged-items: false
+  # How far (blocks) a parked caravan NPC may wander from its stop before
+  # it walks back (teleports back if it gets twice as far). 0 = no leash.
+  max-wander-distance: 10
+  # Pathfinding speed multiplier while a caravan walks between stops.
+  travel-speed: 1.0
+  # When nobody is near a traveling caravan its NPC unloads; it keeps
+  # moving "off-screen" at this many blocks per second.
+  offscreen-blocks-per-second: 1.2
+  # Safety net: a caravan always arrives within this many real minutes
+  # of departing, even if it got stuck on terrain.
+  max-travel-minutes: 20
+
+# Arrival / departure announcements. Chat goes to everyone with
+# migratingmarkets.notify (default: everyone) when
+# settings.broadcast-server-wide is true.
+announcements:
+  # Big on-screen title on arrival/departure.
+  title: true
+  # Play a sound to every notified player.
+  sound: true
+  arrival-sound: "minecraft:entity.villager.celebrate"
+  departure-sound: "minecraft:block.note_block.bell"
+  # Chat warning when a caravan starts its last market day at a stop.
+  last-day-warning: true
+  # '&' color codes. Placeholders: %caravan% %stop% %hint% %days%
+  # Set a chat-* message to "" to disable just that message.
+  messages:
+    chat-arrival: "&6The %caravan% &ehas arrived at &f%stop%&e! &7Trade while they stay."
+    chat-departure: "&7The %caravan% &7has packed up and is moving on. &8Word is they're headed %hint%."
+    chat-last-day: "&7The %caravan% &7packs up after this market day - last chance to trade at &f%stop%&7!"
+    title-arrival: "%caravan%"
+    subtitle-arrival: "&ehas arrived at &f%stop%"
+    title-departure: "%caravan%"
+    subtitle-departure: "&7is moving on, headed %hint%"
+    traveling-suffix: " &e(traveling)"
+    escort-bossbar: "&eEscorting %caravan% &7- &f%distance%m &7to go"
+
+# /market where [id] - action-bar compass to a caravan that is set up at a stop.
+tracking:
+  enabled: true
+  # How long the action-bar directions stay up.
+  duration-seconds: 30
+  # Show the stop's X/Z next to the distance.
+  show-coordinates: true
+  # Also point the player's compass at the caravan.
+  set-compass-target: true
+
+# Boss bar shown to players within settings.escort-radius of a traveling
+# caravan, with the journey's progress.
+escort-bossbar:
+  enabled: true
+  # PINK, BLUE, RED, GREEN, YELLOW, PURPLE or WHITE
+  color: YELLOW
+
+# Shop window look & feel.
+gui:
+  sounds: true
+  # Material used for the bottom control bar's background.
+  filler-material: GRAY_STAINED_GLASS_PANE
+  buy-sound: "minecraft:entity.experience_orb.pickup"
+  sell-sound: "minecraft:entity.villager.yes"
+  deny-sound: "minecraft:entity.villager.no"
+
+# Checks GitHub for a newer release on startup (one async request) and
+# tells admins on join. Set to false to disable.
+update-checker:
+  enabled: true
 
 # Currency the market buys/sells in.
 #   provider: emerald  -> uses physical emeralds in the player's inventory (default, no dependency)
@@ -116,7 +187,8 @@ routes:
         z: -50
         name: "Redstone Bazaar"
 
-  # Only spawns if the plugin named under lucky-block-bridge.plugin-name is installed.
+  # Only spawns if the plugin named under lucky-block-bridge.plugin-name is
+  # installed (or the LuckyBlock 2.0 API is available under any name).
   fortune-caravan:
     display-name: "&dTraveling Fortune Teller"
     specialty: fortune

@@ -28,6 +28,14 @@ public class MarketItem {
 
     private double multiplier = 1.0;
     private int currentStock;
+    /**
+     * True once an admin has changed this item's price/level/category in
+     * game. Customized items keep their saved values across restarts;
+     * untouched config items always pick up the current config.yml
+     * values instead (previously the first save froze them forever, so
+     * editing base-price in config.yml + reload silently did nothing).
+     */
+    private boolean customized;
 
     public MarketItem(Material material, double basePrice, String category, int level, int maxStock) {
         this(material, basePrice, category, level, maxStock, null, null);
@@ -43,6 +51,32 @@ public class MarketItem {
         this.giveCommand = giveCommand;
         this.luckyRarity = luckyRarity;
         this.currentStock = maxStock;
+    }
+
+    /**
+     * Stable identity used to match saved state back to config items:
+     * material + lucky rarity + give-command. Saved state used to be
+     * matched purely by list index, so removing one item shifted every
+     * later item's saved price/stock onto the wrong material.
+     */
+    public String getIdentityKey() {
+        return material.name() + "|" + (luckyRarity == null ? "" : luckyRarity.toUpperCase())
+                + "|" + (giveCommand == null ? "" : giveCommand);
+    }
+
+    public boolean isCustomized() {
+        return customized;
+    }
+
+    public void setCustomized(boolean customized) {
+        this.customized = customized;
+    }
+
+    /** -1 below base, 0 at base, +1 above base — used for the trend arrow in the GUI. */
+    public int getTrend() {
+        if (multiplier > 1.0001) return 1;
+        if (multiplier < 0.9999) return -1;
+        return 0;
     }
 
     public Material getMaterial() {
@@ -81,8 +115,15 @@ public class MarketItem {
      */
     public void setLevel(int level, int stockPerLevel) {
         this.level = Math.max(1, level);
-        this.maxStock = Math.max(1, this.level * stockPerLevel);
+        this.maxStock = Math.max(1, this.level * Math.max(1, stockPerLevel));
         this.currentStock = Math.min(currentStock, maxStock);
+    }
+
+    /** Restores a saved level + stock cap exactly as they were (no ratio re-derivation). */
+    public void restoreLevel(int level, int maxStock) {
+        this.level = Math.max(1, level);
+        this.maxStock = Math.max(1, maxStock);
+        this.currentStock = Math.min(currentStock, this.maxStock);
     }
 
     public int getCurrentStock() {

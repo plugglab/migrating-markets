@@ -25,16 +25,22 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> SUBCOMMANDS = List.of(
             "reload", "list", "forcemove", "teleport", "stop",
             "edit", "additem", "removeitem", "setprice", "setlevel",
-            "createroute", "addwaypoint", "removewaypoint", "deleteroute");
+            "createroute", "addwaypoint", "removewaypoint", "deleteroute",
+            "info", "restock", "goto");
+
+    private static final java.util.regex.Pattern ID_PATTERN = java.util.regex.Pattern.compile("[a-z0-9_-]{1,32}");
 
     private static final List<String> COMMON_MATERIALS = List.of(
             "DIAMOND", "IRON_INGOT", "GOLD_INGOT", "EMERALD", "NETHERITE_INGOT",
             "ENCHANTED_BOOK", "ENDER_PEARL", "TOTEM_OF_UNDYING", "ELYTRA");
 
+    private final studio.plugglab.migratingmarkets.MigratingMarkets plugin;
     private final CaravanManager caravanManager;
     private final ConfigManager configManager;
 
-    public CaravanAdminCommand(CaravanManager caravanManager, ConfigManager configManager) {
+    public CaravanAdminCommand(studio.plugglab.migratingmarkets.MigratingMarkets plugin,
+                               CaravanManager caravanManager, ConfigManager configManager) {
+        this.plugin = plugin;
         this.caravanManager = caravanManager;
         this.configManager = configManager;
     }
@@ -46,18 +52,34 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
+        if (!sender.hasPermission("migratingmarkets.admin")) {
+            sender.sendMessage(Component.text("You don't have permission to do that.").color(NamedTextColor.RED));
+            return true;
+        }
+
         switch (args[0].toLowerCase()) {
             case "reload" -> {
                 caravanManager.reload();
-                sender.sendMessage(Component.text("Caravans reloaded from config.").color(NamedTextColor.GREEN));
+                if (plugin.getTracker() != null) plugin.getTracker().start();
+                sender.sendMessage(Component.text("Caravans reloaded from config ("
+                        + caravanManager.getCaravans().size() + " loaded).").color(NamedTextColor.GREEN));
             }
             case "list" -> handleList(sender);
             case "forcemove" -> handleForceMove(sender, args);
             case "teleport" -> handleTeleport(sender, args);
             case "stop" -> {
+                if (!caravanManager.isRunning()) {
+                    sender.sendMessage(Component.text("Caravans are already stopped. Use /caravanadmin reload to start them.")
+                            .color(NamedTextColor.GRAY));
+                    return true;
+                }
                 caravanManager.shutdown();
-                sender.sendMessage(Component.text("All caravans despawned and state saved.").color(NamedTextColor.YELLOW));
+                sender.sendMessage(Component.text("All caravans despawned and state saved. Markets stay closed until "
+                        + "/caravanadmin reload (or a restart).").color(NamedTextColor.YELLOW));
             }
+            case "info" -> handleInfo(sender, args);
+            case "restock" -> handleRestock(sender, args);
+            case "goto" -> handleGoto(sender, args);
             case "edit" -> handleEdit(sender, args);
             case "additem" -> handleAddItem(sender, args);
             case "removeitem" -> handleRemoveItem(sender, args);
@@ -85,10 +107,16 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
             return;
         }
         for (Caravan c : caravanManager.getCaravans()) {
+            String where = !c.hasWaypoints() ? "no stops"
+                    : c.getState() == Caravan.State.AT_MARKET
+                    ? "at #" + c.getCurrentWaypointIndex() + " " + c.getCurrentWaypoint().getName()
+                            + ", " + caravanManager.getDaysLeft(c) + "d left"
+                    : "traveling " + Math.round(caravanManager.getTravelProgress(c) * 100) + "%";
             Component line = Component.text(c.getId() + " -> ").color(NamedTextColor.WHITE)
                     .append(c.getDisplayNameComponent())
-                    .append(Component.text(" [" + c.getState() + "] waypoint#" + c.getCurrentWaypointIndex()
-                            + " · " + c.getInventory().size() + " items")
+                    .append(Component.text(" [" + where + "] · " + c.getInventory().size() + " items"
+                            + (caravanManager.isCustomCaravan(c.getId()) ? " · custom" : "")
+                            + (caravanManager.getLiveEntity(c) != null ? " · NPC spawned" : " · NPC not loaded"))
                             .color(NamedTextColor.GRAY));
             sender.sendMessage(line);
         }
@@ -104,7 +132,12 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
             sendUnknownId(sender, args[1]);
             return;
         }
-        caravanManager.forceMove(c);
+        if (!caravanManager.forceMove(c)) {
+            sender.sendMessage(Component.text(c.getWaypoints().size() < 2
+                    ? "That caravan needs at least 2 stops to travel."
+                    : "That caravan is already on the road.").color(NamedTextColor.RED));
+            return;
+        }
         Component msg = Component.text("Forced ").color(NamedTextColor.GREEN)
                 .append(c.getDisplayNameComponent())
                 .append(Component.text(" to depart.").color(NamedTextColor.GREEN));
@@ -180,17 +213,33 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(Component.text("Unknown material '" + args[2] + "'.").color(NamedTextColor.RED));
             return;
         }
+        if (!material.isItem() || material.isAir()) {
+            sender.sendMessage(Component.text(material + " isn't an obtainable item.").color(NamedTextColor.RED));
+            return;
+        }
         Double price = parseDouble(sender, args[3], "Price");
         if (price == null) return;
+        if (price <= 0) {
+            sender.sendMessage(Component.text("Price must be greater than 0.").color(NamedTextColor.RED));
+            return;
+        }
         Integer level = parseInt(sender, args[4], "Level");
         if (level == null) return;
+        if (level < 1) {
+            sender.sendMessage(Component.text("Level must be at least 1.").color(NamedTextColor.RED));
+            return;
+        }
+        warnAboveMaxLevel(sender, level);
         String category = args.length > 5
                 ? String.join(" ", java.util.Arrays.copyOfRange(args, 5, args.length))
                 : "custom";
 
         int maxStock = Math.max(1, level * configManager.getStockPerLevel());
         MarketItem item = new MarketItem(material, price, category, Math.max(1, level), maxStock);
+        item.setCustomized(true);
+        c.getRemovedItemKeys().remove(item.getIdentityKey());
         c.getInventory().add(item);
+        afterShopEdit(c);
         sender.sendMessage(Component.text("Added " + material + " to " + c.getId() + " at slot "
                 + (c.getInventory().size() - 1) + " (price " + price + ", level " + level + ").")
                 .color(NamedTextColor.GREEN));
@@ -202,6 +251,8 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
         Caravan c = caravanManager.getById(args[1]);
         int slot = Integer.parseInt(args[2]);
         c.getInventory().remove(slot);
+        c.getRemovedItemKeys().add(item.getIdentityKey());
+        afterShopEdit(c);
         sender.sendMessage(Component.text("Removed slot " + slot + " (" + item.getMaterial() + ") from " + c.getId() + ".")
                 .color(NamedTextColor.YELLOW));
     }
@@ -216,7 +267,13 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
         if (item == null) return;
         Double price = parseDouble(sender, args[3], "Price");
         if (price == null) return;
+        if (price <= 0) {
+            sender.sendMessage(Component.text("Price must be greater than 0.").color(NamedTextColor.RED));
+            return;
+        }
         item.setBasePrice(price);
+        item.setCustomized(true);
+        afterShopEdit(caravanManager.getById(args[1]));
         sender.sendMessage(Component.text("Slot " + args[2] + " base price set to " + price + ".")
                 .color(NamedTextColor.GREEN));
     }
@@ -231,7 +288,14 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
         if (item == null) return;
         Integer level = parseInt(sender, args[3], "Level");
         if (level == null) return;
+        if (level < 1) {
+            sender.sendMessage(Component.text("Level must be at least 1.").color(NamedTextColor.RED));
+            return;
+        }
+        warnAboveMaxLevel(sender, level);
         item.setLevel(level, configManager.getStockPerLevel());
+        item.setCustomized(true);
+        afterShopEdit(caravanManager.getById(args[1]));
         sender.sendMessage(Component.text("Slot " + args[2] + " level set to " + item.getLevel()
                 + " (stock cap now " + item.getMaxStock() + ").").color(NamedTextColor.GREEN));
     }
@@ -270,7 +334,12 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
                     + " (or any other word for an empty starter shop).").color(NamedTextColor.GRAY));
             return;
         }
-        String id = args[1];
+        String id = args[1].toLowerCase();
+        if (!ID_PATTERN.matcher(id).matches()) {
+            sender.sendMessage(Component.text("Ids may only use letters, digits, '_' and '-' (max 32 chars) - "
+                    + "dots/spaces would break the save files.").color(NamedTextColor.RED));
+            return;
+        }
         if (!caravanManager.isIdAvailable(id)) {
             sender.sendMessage(Component.text("Id '" + id + "' is already in use by another caravan.")
                     .color(NamedTextColor.RED));
@@ -303,7 +372,7 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
         if (c == null) return;
 
         String name = String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length));
-        Location loc = player.getLocation();
+        Location loc = player.getLocation().toBlockLocation().add(0.5, 0, 0.5);
         Waypoint waypoint = new Waypoint(loc.getWorld().getName(), loc.getX(), loc.getY(), loc.getZ(), name);
         caravanManager.addWaypoint(c, waypoint);
         sender.sendMessage(Component.text()
@@ -379,9 +448,118 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendUsage(CommandSender sender) {
-        sender.sendMessage(Component.text("Usage: /caravanadmin <reload|list|forcemove|teleport|stop|edit|"
+        sender.sendMessage(Component.text("Usage: /caravanadmin <reload|list|info|forcemove|teleport|goto|restock|stop|edit|"
                 + "additem|removeitem|setprice|setlevel|createroute|addwaypoint|removewaypoint|deleteroute> [args]")
                 .color(NamedTextColor.RED));
+    }
+
+    private void warnAboveMaxLevel(CommandSender sender, int level) {
+        if (level > configManager.getMaxCustomerLevel()) {
+            sender.sendMessage(Component.text("Note: level " + level + " is above max-customer-level ("
+                    + configManager.getMaxCustomerLevel() + "), so nobody will be able to buy it.")
+                    .color(NamedTextColor.GOLD));
+        }
+    }
+
+    /** After any shop edit: close stale market windows (slot indices may have shifted) and persist. */
+    private void afterShopEdit(Caravan c) {
+        if (c == null) return;
+        caravanManager.closeViewers(c, false);
+        caravanManager.saveSoon();
+    }
+
+    private void handleInfo(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("Usage: /caravanadmin info <id>").color(NamedTextColor.RED));
+            return;
+        }
+        Caravan c = caravanManager.getById(args[1]);
+        if (c == null) {
+            sendUnknownId(sender, args[1]);
+            return;
+        }
+        sender.sendMessage(Component.text("=== ").color(NamedTextColor.GOLD).append(c.getDisplayNameComponent())
+                .append(Component.text(" (" + c.getId() + ") ===").color(NamedTextColor.GOLD)));
+        sender.sendMessage(gray("Specialty: " + c.getSpecialty() + (caravanManager.isCustomCaravan(c.getId())
+                ? " · owner-created" : " · from config.yml")));
+        sender.sendMessage(gray("State: " + c.getState() + (c.getState() == Caravan.State.TRAVELING
+                ? " (" + Math.round(caravanManager.getTravelProgress(c) * 100) + "%)"
+                : " · day " + c.getDaysAtCurrentStop() + "/" + configManager.getDaysPerStop())));
+        for (int i = 0; i < c.getWaypoints().size(); i++) {
+            Waypoint wp = c.getWaypoints().get(i);
+            sender.sendMessage(gray((i == c.getCurrentWaypointIndex() ? " > " : "   ") + i + ": " + wp.getName()
+                    + " (" + wp.getWorldName() + " " + Math.round(wp.getX()) + ", " + Math.round(wp.getZ()) + ")"));
+        }
+        long outOfStock = c.getInventory().stream().filter(it -> it.getCurrentStock() == 0).count();
+        sender.sendMessage(gray("Items: " + c.getInventory().size() + " (" + outOfStock + " sold out) · customers: "
+                + c.getPurchaseCountMap().size() + " · escorts: " + c.getReputationMap().size()));
+        var entity = caravanManager.getLiveEntity(c);
+        sender.sendMessage(gray("NPC: " + (entity == null ? "not spawned (area not loaded)"
+                : "at " + entity.getLocation().getBlockX() + ", " + entity.getLocation().getBlockY() + ", "
+                + entity.getLocation().getBlockZ())));
+    }
+
+    private void handleRestock(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("Usage: /caravanadmin restock <id|all>").color(NamedTextColor.RED));
+            return;
+        }
+        List<Caravan> targets;
+        if (args[1].equalsIgnoreCase("all")) {
+            targets = caravanManager.getCaravans();
+        } else {
+            Caravan c = caravanManager.getById(args[1]);
+            if (c == null) {
+                sendUnknownId(sender, args[1]);
+                return;
+            }
+            targets = List.of(c);
+        }
+        for (Caravan c : targets) {
+            for (MarketItem item : c.getInventory()) {
+                item.setCurrentStock(item.getMaxStock());
+            }
+            caravanManager.closeViewers(c, false);
+        }
+        caravanManager.saveSoon();
+        sender.sendMessage(Component.text("Restocked " + targets.size() + " caravan(s) to full stock.")
+                .color(NamedTextColor.GREEN));
+    }
+
+    private void handleGoto(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Component.text("Only players can teleport.").color(NamedTextColor.RED));
+            return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("Usage: /caravanadmin goto <id>").color(NamedTextColor.RED));
+            return;
+        }
+        Caravan c = caravanManager.getById(args[1]);
+        if (c == null) {
+            sendUnknownId(sender, args[1]);
+            return;
+        }
+        var entity = caravanManager.getLiveEntity(c);
+        Location target = entity != null ? entity.getLocation() : null;
+        if (target == null) {
+            Location approx = caravanManager.getApproximateLocation(c);
+            if (approx != null) {
+                int y = approx.getWorld().getHighestBlockYAt(approx.getBlockX(), approx.getBlockZ()) + 1;
+                target = new Location(approx.getWorld(), approx.getX(), y, approx.getZ());
+            }
+        }
+        if (target == null) {
+            sender.sendMessage(Component.text("That caravan has no known location (no stops, or its world isn't loaded).")
+                    .color(NamedTextColor.RED));
+            return;
+        }
+        player.teleportAsync(target);
+        player.sendMessage(Component.text("Teleported to ").color(NamedTextColor.GREEN).append(c.getDisplayNameComponent()));
+    }
+
+    private static Component gray(String s) {
+        return Component.text(s).color(NamedTextColor.GRAY);
     }
 
     private void sendUnknownId(CommandSender sender, String attempted) {
@@ -407,8 +585,16 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
         String sub = args[0].toLowerCase();
         List<String> ids = caravanManager.getCaravans().stream().map(Caravan::getId).toList();
 
+        if (args.length == 2 && List.of("addwaypoint", "removewaypoint", "deleteroute").contains(sub)) {
+            return startsWith(caravanManager.getCustomCaravans().stream().map(Caravan::getId).toList(), args[1]);
+        }
+        if (args.length == 2 && sub.equals("restock")) {
+            List<String> withAll = new ArrayList<>(ids);
+            withAll.add("all");
+            return startsWith(withAll, args[1]);
+        }
         if (args.length == 2 && List.of("forcemove", "teleport", "edit", "additem", "removeitem", "setprice", "setlevel",
-                "addwaypoint", "removewaypoint", "deleteroute").contains(sub)) {
+                "info", "goto").contains(sub)) {
             return startsWith(ids, args[1]);
         }
 
@@ -436,7 +622,12 @@ public class CaravanAdminCommand implements CommandExecutor, TabCompleter {
                 return startsWith(indices, args[2]);
             }
             if (sub.equals("additem")) {
-                return startsWith(COMMON_MATERIALS, args[2]);
+                if (args[2].isEmpty()) return COMMON_MATERIALS;
+                String prefix = args[2].toUpperCase();
+                return java.util.Arrays.stream(Material.values())
+                        .filter(m -> m.isItem() && !m.isAir() && !m.name().startsWith("LEGACY_")
+                                && m.name().startsWith(prefix))
+                        .limit(50).map(Material::name).collect(Collectors.toList());
             }
         }
 

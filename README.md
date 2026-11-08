@@ -46,7 +46,24 @@ supply/demand pricing, and rewards players who protect it on the road.
   Adventure Components correctly (no more raw `§` characters showing up
   in chat).
 - **Tab completion** on both `/market` and `/caravanadmin` — subcommands,
-  caravan ids, and waypoint indices all autocomplete.
+  caravan ids, materials and waypoint indices all autocomplete.
+- **Arrival & departure announcements** (new in 2.1.0): chat, on-screen
+  title and sound when a caravan arrives or leaves, plus a "last market
+  day" warning. All texts are editable under `announcements.messages`.
+- **`/market where`** (new in 2.1.0): a live action-bar compass with an
+  arrow and distance to the nearest caravan that's set up at a stop (or a
+  specific one), and your compass points at it too.
+- **Escort boss bar** (new in 2.1.0): stand near a traveling caravan to
+  see how far it still has to go.
+- **Reliable travel** (new in 2.1.0): caravans walk in short hops, get
+  unstuck automatically, keep travelling off-screen when nobody is near,
+  and always arrive within `max-travel-minutes`.
+- **Polished shop window** (new in 2.1.0): info bar (stop, days left,
+  next restock), price-trend arrows, level stars, discounts on the price
+  tag, sounds, and shift + right-click to sell everything matching.
+- **PlaceholderAPI placeholders** (optional, new in 2.1.0) — see below.
+- **Update checker**: one async GitHub check on startup, admins are told
+  on join (`update-checker.enabled: false` to disable).
 
 ## LuckyBlock bridge
 
@@ -60,7 +77,9 @@ implementation at runtime via `LuckyBlockAPI.getOrNull()`.
 
 What this means in practice:
 - The `fortune-caravan` route only spawns if a plugin named
-  `lucky-block-bridge.plugin-name` (default `LuckyBlock`) is installed.
+  `lucky-block-bridge.plugin-name` (default `LuckyEngine`) is installed,
+  or the LuckyBlock 2.0 API is available (the LuckyBlock jar registers
+  as `LuckyBlock`).
 - Items in the `fortune` specialty use a `rarity` field
   (`COMMON`/`RARE`/`EPIC`/`LEGENDARY`) instead of `give-command`. Buying
   one calls `LuckyBlockAPI.buildLuckyBlockItem(rarity, amount)` and
@@ -83,11 +102,16 @@ back. Use `rarity` instead whenever you're actually running LuckyBlock.
 | `/market info` | List all caravans and their status | `migratingmarkets.use` |
 | `/market browse` | Open the GUI of a caravan you're standing near | `migratingmarkets.use` |
 | `/market track` | See rough whereabouts / days remaining per caravan | `migratingmarkets.use` |
+| `/market where [id]` | Action-bar directions to the nearest (or a given) caravan at a stop | `migratingmarkets.use` |
+| `/market stopwhere` | Stop the directions | `migratingmarkets.use` |
 | `/caravanadmin list` | List all caravans with internal state | `migratingmarkets.admin` |
+| `/caravanadmin info <id>` | Route, state, NPC and stock details for one caravan | `migratingmarkets.admin` |
+| `/caravanadmin restock <id\|all>` | Refill stock immediately | `migratingmarkets.admin` |
+| `/caravanadmin goto <id>` | Teleport yourself to a caravan | `migratingmarkets.admin` |
 | `/caravanadmin reload` | Reload config and respawn caravans | `migratingmarkets.admin` |
 | `/caravanadmin forcemove <id>` | Force a caravan to depart immediately | `migratingmarkets.admin` |
 | `/caravanadmin teleport <id> <waypointIndex>` | Snap a caravan to a specific waypoint | `migratingmarkets.admin` |
-| `/caravanadmin stop` | Despawn all caravans and save state | `migratingmarkets.admin` |
+| `/caravanadmin stop` | Despawn all caravans and save state (markets stay closed until `reload`) | `migratingmarkets.admin` |
 | `/caravanadmin edit <id>` | Open the in-game shop editor GUI | `migratingmarkets.admin` |
 | `/caravanadmin additem <id> <material> <price> <level> [category...]` | Add an item without opening the GUI | `migratingmarkets.admin` |
 | `/caravanadmin removeitem <id> <slot>` | Remove an item by slot number | `migratingmarkets.admin` |
@@ -100,6 +124,44 @@ back. Use `rarity` instead whenever you're actually running LuckyBlock.
 
 Players can also just right-click a caravan's villager NPC to open its
 shop directly (no command needed) when it's set up at a stop.
+
+`/cadmin` is an alias for `/caravanadmin`.
+
+## Permissions
+
+| Permission | Default | What it does |
+|---|---|---|
+| `migratingmarkets.use` | everyone | Trade with caravans, use `/market` |
+| `migratingmarkets.notify` | everyone | Receive arrival/departure announcements |
+| `migratingmarkets.admin` | op | `/caravanadmin`, shop editor, update notices (includes the two above) |
+
+## Trading
+
+In the shop window:
+- **Left-click** buy 1 · **Shift + left-click** buy 8
+- **Right-click** sell the stack in your hand · **Shift + right-click**
+  sell every matching item in your inventory
+- Sell price is `settings.sell-price-ratio` (default 50%) of the current
+  price. Damaged tools/armour can't be sold unless
+  `settings.allow-selling-damaged-items: true`.
+- ▲ / ▼ next to a price means it's currently above / below the usual
+  price because of recent trading.
+
+## PlaceholderAPI
+
+If PlaceholderAPI is installed, these placeholders are available
+(`<id>` is a caravan id, e.g. `eastern-loop`):
+
+| Placeholder | Value |
+|---|---|
+| `%migratingmarkets_active%` / `_total%` | Caravans set up at a stop / loaded |
+| `%migratingmarkets_nearest%` | Nearest set-up caravan's name |
+| `%migratingmarkets_nearest_distance%` / `_nearest_stop%` | Distance to it / its stop |
+| `%migratingmarkets_<id>_status%` | `At <stop>` or `Traveling` |
+| `%migratingmarkets_<id>_name%` / `_state%` / `_stop%` | Name / `AT_MARKET`/`TRAVELING` / stop |
+| `%migratingmarkets_<id>_days_left%` / `_progress%` | Market-days left / travel progress (0-100) |
+| `%migratingmarkets_<id>_level%` | The player's customer level there |
+| `%migratingmarkets_<id>_reputation%` / `_title%` / `_discount%` | The player's escort standing there |
 
 ## Creating your own caravans in-game
 
@@ -137,15 +199,19 @@ editor for a caravan. It looks like the player-facing shop, but:
   Fine-tune it right after with `/caravanadmin setprice`/`setlevel`
   using the slot number shown in the item's name (e.g. `[12] Diamond`).
 - **Right-click an existing item** to remove it immediately.
+- **Shift + left-click** cycles an item's level; **number keys 1-9**
+  set it directly; **shift + right-click** restocks it.
 - Changes are live on the running caravan right away, and persist to
   `caravan-state.yml` on the next save/restart — including items added
   this way that don't exist in `config.yml` at all, so you don't need
   to touch the config file for one-off additions.
 
-Editing through `config.yml` directly still works as before and is
-better for anything you want to survive a `/caravanadmin reload` (which
-rebuilds caravans fresh from config) — runtime-added items persist
-across restarts but not across an explicit `reload`.
+Everything edited in game is saved right away and survives restarts and
+`/caravanadmin reload`. Items you edited or added in game keep their
+in-game values; items you never touched always follow `config.yml`, so
+changing a `base-price` there and running `/caravanadmin reload` works.
+Items you removed in game stay removed even though they're still in
+`config.yml`.
 
 ## Customer levels — gating high-level items
 
@@ -178,25 +244,34 @@ Everything lives in `config.yml`:
   different loops.
 - `escort-reputation.tiers` — threshold (kills near a traveling
   caravan), discount, and a title shown to the player.
+- `announcements` — title/sound toggles, sounds, last-day warning and
+  every announcement text (`&` colours; `%caravan%`, `%stop%`, `%hint%`,
+  `%days%`).
+- `tracking` — `/market where` duration, coordinates, compass target.
+- `escort-bossbar` — on/off and colour.
+- `gui` — shop sounds and filler material.
+- `update-checker.enabled`.
+
+When you update from an older version, any of these new options that
+are missing from your `config.yml` are added automatically with their
+default values; nothing you already set is changed.
 
 ## Building
-
-This project ships as source only — building requires internet access
-to pull the Paper API dependency, which wasn't available in the
-environment that generated this code, so it hasn't been compiled here.
-To build the jar yourself:
 
 ```bash
 mvn clean package
 ```
 
-The output jar will be at `target/MigratingMarkets-1.0.0.jar`. Drop it
-into your server's `plugins/` folder and restart.
+The output jar is `target/MigratingMarkets-2.1.0.jar`. Drop it into your
+server's `plugins/` folder and restart. The build needs
+`libs/LuckyBlock-2.0.jar` (LuckyBlock's API, compile-time only — it is
+not bundled into the plugin jar).
 
 Requires Java 21 and Paper (or a Paper fork) for Minecraft 1.21.x —
 the plugin uses `Mob#getPathfinder()` and Adventure's `Component` API,
 both of which are Paper-specific (not available on plain Spigot/Bukkit
-without Paper's patches).
+without Paper's patches). Optional: Vault (+ an economy plugin),
+LuckyBlock 2.0, PlaceholderAPI.
 
 ## Notes on extending
 
@@ -207,9 +282,6 @@ without Paper's patches).
 - Want caravans to be attackable/lootable while traveling? The
   traveling-state entity is already a normal (non-invulnerable)
   villager — hook into `EntityDamageEvent` for further mechanics.
-- Waypoints are just data — a `/caravanadmin` subcommand to add/remove
-  waypoints at runtime would be a natural next step if you want to
-  design routes in-game instead of in `config.yml`.
 - Adding a new specialty or item is just config — no rebuild needed:
   drop a new entry under `specialties`, give it a `level`, and
   optionally reference it from a route.

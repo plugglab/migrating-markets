@@ -44,6 +44,26 @@ public class Waypoint {
         return new Location(world, x, resolvedY, z);
     }
 
+    /**
+     * Location using the configured Y, WITHOUT touching terrain. Safe to
+     * call for far-away / unloaded stops (direction hints, distance
+     * checks, compass targets) because it never forces a synchronous
+     * chunk load the way {@link #toLocation()} does.
+     */
+    public Location toRawLocation() {
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            return null;
+        }
+        return new Location(world, x, configuredY, z);
+    }
+
+    /** Whether the chunk this stop sits in is currently loaded. */
+    public boolean isChunkLoaded() {
+        World world = Bukkit.getWorld(worldName);
+        return world != null && world.isChunkLoaded((int) Math.floor(x) >> 4, (int) Math.floor(z) >> 4);
+    }
+
     public String getName() {
         return name;
     }

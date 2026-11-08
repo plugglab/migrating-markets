@@ -11,12 +11,31 @@ import org.bukkit.inventory.ItemStack;
  * or command-dispatch guessing needed since the API jar is available at
  * compile time (see pom.xml) and the actual plugin provides it at
  * runtime via LuckyBlockAPI.getOrNull().
+ *
+ * The API classes are NOT shaded into this jar, so on a server without
+ * LuckyBlock every call would throw NoClassDefFoundError — which used to
+ * crash onEnable (isAvailable() is called there). Every API touch now
+ * goes through {@link #api()}, which treats a missing class as "not
+ * installed".
  */
 public class LuckyBlockBridge {
 
+    private volatile boolean classMissing;
+
+    /** The live API, or null if LuckyBlock isn't installed/enabled. */
+    private LuckyBlockAPI api() {
+        if (classMissing) return null;
+        try {
+            return LuckyBlockAPI.getOrNull();
+        } catch (LinkageError e) {
+            classMissing = true;
+            return null;
+        }
+    }
+
     /** Whether the LuckyBlock plugin is actually loaded right now. */
     public boolean isAvailable() {
-        return LuckyBlockAPI.getOrNull() != null;
+        return api() != null;
     }
 
     /**
@@ -25,17 +44,16 @@ public class LuckyBlockBridge {
      * COMMON/RARE/EPIC/LEGENDARY.
      */
     public ItemStack buildItem(String rarityName, int amount) {
-        LuckyBlockAPI api = LuckyBlockAPI.getOrNull();
-        if (api == null) {
+        LuckyBlockAPI api = api();
+        if (api == null || rarityName == null) {
             return null;
         }
-        LuckyBlockRarity rarity;
         try {
-            rarity = LuckyBlockRarity.valueOf(rarityName.toUpperCase());
-        } catch (IllegalArgumentException e) {
+            LuckyBlockRarity rarity = LuckyBlockRarity.valueOf(rarityName.toUpperCase());
+            return api.buildLuckyBlockItem(rarity, amount);
+        } catch (IllegalArgumentException | LinkageError e) {
             return null;
         }
-        return api.buildLuckyBlockItem(rarity, amount);
     }
 
     /** Gives `amount` lucky blocks of the given rarity directly into the player's inventory. */
@@ -64,7 +82,37 @@ public class LuckyBlockBridge {
 
     /** Whether a held ItemStack is a lucky block item (any rarity), for sell-back checks. */
     public boolean isLuckyBlockItem(ItemStack stack) {
-        LuckyBlockAPI api = LuckyBlockAPI.getOrNull();
-        return api != null && stack != null && api.isLuckyBlockItem(stack);
+        LuckyBlockAPI api = api();
+        if (api == null || stack == null) return false;
+        try {
+            return api.isLuckyBlockItem(stack);
+        } catch (LinkageError e) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether a held stack is a lucky block of exactly this rarity. Used
+     * for sell-back so a COMMON block can't be sold at a LEGENDARY slot's
+     * price (previously any lucky block sold at whatever slot was
+     * clicked — a straight money exploit).
+     */
+    public boolean isLuckyBlockOfRarity(ItemStack stack, String rarityName) {
+        if (!isLuckyBlockItem(stack)) return false;
+        ItemStack reference = buildItem(rarityName, 1);
+        if (reference == null || !reference.hasItemMeta() || !stack.hasItemMeta()) return false;
+        // Compare the string tags LuckyBlock stamps on its items (its rarity
+        // key) rather than isSimilar(): the skull profile on each built item
+        // isn't guaranteed to be identical between calls.
+        var refPdc = reference.getItemMeta().getPersistentDataContainer();
+        var heldPdc = stack.getItemMeta().getPersistentDataContainer();
+        boolean comparedAny = false;
+        for (var key : refPdc.getKeys()) {
+            var type = org.bukkit.persistence.PersistentDataType.STRING;
+            if (!refPdc.has(key, type)) continue;
+            comparedAny = true;
+            if (!heldPdc.has(key, type) || !refPdc.get(key, type).equals(heldPdc.get(key, type))) return false;
+        }
+        return comparedAny || reference.isSimilar(stack);
     }
 }
