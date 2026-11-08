@@ -43,6 +43,8 @@ public class ConfigManager {
     private double maxPriceMultiplier;
     private double minPriceMultiplier;
     private int stockPerLevel;
+    private int purchasesPerCustomerLevel;
+    private int maxCustomerLevel;
 
     private String economyProvider = "emerald";
 
@@ -75,6 +77,8 @@ public class ConfigManager {
             maxPriceMultiplier = settings.getDouble("max-price-multiplier", 2.5);
             minPriceMultiplier = settings.getDouble("min-price-multiplier", 0.4);
             stockPerLevel = settings.getInt("stock-per-level", 6);
+            purchasesPerCustomerLevel = settings.getInt("purchases-per-customer-level", 8);
+            maxCustomerLevel = settings.getInt("max-customer-level", 5);
         }
 
         ConfigurationSection economy = cfg.getConfigurationSection("economy");
@@ -166,6 +170,11 @@ public class ConfigManager {
         return routes;
     }
 
+    /** Known specialty ids, for tab completion when creating a custom route. */
+    public java.util.Set<String> getSpecialtyNames() {
+        return specialtyTemplates.keySet();
+    }
+
     /** Fresh copy of a specialty's item pool (each caravan needs its own mutable pricing/stock state). */
     public List<MarketItem> freshItemsFor(String specialty) {
         List<ItemTemplate> template = specialtyTemplates.getOrDefault(specialty, List.of());
@@ -219,6 +228,14 @@ public class ConfigManager {
 
     public int getStockPerLevel() {
         return stockPerLevel;
+    }
+
+    public int getPurchasesPerCustomerLevel() {
+        return purchasesPerCustomerLevel;
+    }
+
+    public int getMaxCustomerLevel() {
+        return maxCustomerLevel;
     }
 
     public String getEconomyProvider() {

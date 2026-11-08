@@ -51,4 +51,17 @@ public class Waypoint {
     public String getWorldName() {
         return worldName;
     }
+
+    public double getX() {
+        return x;
+    }
+
+    public double getZ() {
+        return z;
+    }
+
+    /** The originally-given Y (fallback only — toLocation() prefers live terrain height). */
+    public double getConfiguredY() {
+        return configuredY;
+    }
 }

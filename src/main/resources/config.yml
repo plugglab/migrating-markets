@@ -29,6 +29,14 @@ settings:
   min-price-multiplier: 0.4
   # Stock cap per item = item level * this number, fully replenished each market-day.
   stock-per-level: 6
+  # A player's customer level at a caravan starts at 1 and rises as they buy
+  # more from it — every this-many purchased units grants +1 level, up to
+  # max-customer-level. Items with a level above the player's current
+  # customer level are LOCKED (shown greyed out, can't be purchased) — this
+  # is what actually gates high-level goods behind loyal customers instead
+  # of letting anyone buy a level-5 item on their first visit.
+  purchases-per-customer-level: 8
+  max-customer-level: 5
 
 # Currency the market buys/sells in.
 #   provider: emerald  -> uses physical emeralds in the player's inventory (default, no dependency)
@@ -49,7 +57,7 @@ economy:
 # `give-command` on an item — it is NOT used by the `rarity`-based
 # fortune items above, which go through the real API directly.
 lucky-block-bridge:
-  plugin-name: LuckyBlock
+  plugin-name: LuckyEngine
   give-command-template: "lb give %player% %amount%"
 
 routes:
@@ -112,7 +120,7 @@ routes:
   fortune-caravan:
     display-name: "&dTraveling Fortune Teller"
     specialty: fortune
-    requires-plugin: LuckyBlock
+    requires-plugin: LuckyEngine
     waypoints:
       - world: world
         x: 60
@@ -124,6 +132,41 @@ routes:
         y: 68
         z: -260
         name: "Wishing Well"
+
+  provisions-wagon:
+    display-name: "&eProvisions Wagon"
+    specialty: provisioner
+    waypoints:
+      - world: world
+        x: -60
+        y: 70
+        z: 60
+        name: "Millbrook"
+      - world: world
+        x: -180
+        y: 70
+        z: 140
+        name: "Harvest Fields"
+      - world: world
+        x: -40
+        y: 70
+        z: 220
+        name: "Sunmeadow"
+
+  cartographers-cart:
+    display-name: "&2Cartographer's Cart"
+    specialty: cartographer
+    waypoints:
+      - world: world
+        x: 150
+        y: 70
+        z: -300
+        name: "Old Watchtower"
+      - world: world
+        x: 260
+        y: 72
+        z: -220
+        name: "Cliffside Camp"
 
 specialties:
   blacksmith:
@@ -216,6 +259,42 @@ specialties:
         category: lucky-block
         level: 5
         rarity: LEGENDARY
+
+  provisioner:
+    items:
+      - { material: BREAD, base-price: 2, category: food, level: 1 }
+      - { material: APPLE, base-price: 2, category: food, level: 1 }
+      - { material: COOKED_BEEF, base-price: 4, category: food, level: 1 }
+      - { material: CARROT, base-price: 1.5, category: food, level: 1 }
+      - { material: POTATO, base-price: 1.5, category: food, level: 1 }
+      - { material: SUGAR, base-price: 2, category: material, level: 1 }
+      - { material: HONEY_BOTTLE, base-price: 5, category: food, level: 1 }
+      - { material: GOLDEN_CARROT, base-price: 12, category: food, level: 2 }
+      - { material: PUMPKIN_PIE, base-price: 8, category: food, level: 2 }
+      - { material: COOKED_SALMON, base-price: 6, category: food, level: 2 }
+      - { material: MILK_BUCKET, base-price: 5, category: food, level: 2 }
+      - { material: CAKE, base-price: 20, category: food, level: 3 }
+      - { material: SUSPICIOUS_STEW, base-price: 25, category: food, level: 3 }
+      - { material: GOLDEN_APPLE, base-price: 90, category: food, level: 4 }
+      - { material: ENCHANTED_GOLDEN_APPLE, base-price: 500, category: rare, level: 5 }
+
+  cartographer:
+    items:
+      - { material: MAP, base-price: 5, category: navigation, level: 1 }
+      - { material: COMPASS, base-price: 8, category: navigation, level: 1 }
+      - { material: PAPER, base-price: 1, category: material, level: 1 }
+      - { material: TORCH, base-price: 1, category: material, level: 1 }
+      - { material: LEAD, base-price: 4, category: tool, level: 1 }
+      - { material: SADDLE, base-price: 20, category: tool, level: 2 }
+      - { material: SPYGLASS, base-price: 35, category: tool, level: 2 }
+      - { material: CLOCK, base-price: 15, category: navigation, level: 2 }
+      - { material: NAME_TAG, base-price: 18, category: tool, level: 2 }
+      - { material: RECOVERY_COMPASS, base-price: 60, category: navigation, level: 3 }
+      - { material: FILLED_MAP, base-price: 40, category: navigation, level: 3 }
+      - { material: MINECART, base-price: 30, category: tool, level: 3 }
+      - { material: ENDER_CHEST, base-price: 220, category: rare, level: 4 }
+      - { material: LODESTONE, base-price: 100, category: navigation, level: 4 }
+      - { material: BEACON, base-price: 700, category: rare, level: 5 }
 
 # Escort reputation tiers: kills of hostile mobs near a traveling caravan
 # earn reputation with that caravan, unlocking discounts at its next stop.

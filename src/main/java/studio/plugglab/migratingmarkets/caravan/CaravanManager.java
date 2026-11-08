@@ -4,19 +4,26 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.World;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Villager;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import studio.plugglab.migratingmarkets.MigratingMarkets;
+import studio.plugglab.migratingmarkets.data.CustomRouteStore;
 import studio.plugglab.migratingmarkets.data.DataStore;
 import studio.plugglab.migratingmarkets.market.MarketItem;
 import studio.plugglab.migratingmarkets.util.ConfigManager;
 import studio.plugglab.migratingmarkets.util.Waypoint;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -30,15 +37,21 @@ public class CaravanManager {
     private final MigratingMarkets plugin;
     private final ConfigManager configManager;
     private final DataStore dataStore;
+    private final CustomRouteStore customRouteStore;
     private final List<Caravan> caravans = new ArrayList<>();
+    private final Set<String> customCaravanIds = new HashSet<>();
+    private final NamespacedKey caravanTagKey;
 
     private BukkitTask dayTask;
     private BukkitTask movementTask;
 
-    public CaravanManager(MigratingMarkets plugin, ConfigManager configManager, DataStore dataStore) {
+    public CaravanManager(MigratingMarkets plugin, ConfigManager configManager, DataStore dataStore,
+                           CustomRouteStore customRouteStore) {
         this.plugin = plugin;
         this.configManager = configManager;
         this.dataStore = dataStore;
+        this.customRouteStore = customRouteStore;
+        this.caravanTagKey = new NamespacedKey(plugin, "caravan_id");
     }
 
     public List<Caravan> getCaravans() {
@@ -62,8 +75,10 @@ public class CaravanManager {
 
     public void initialize() {
         caravans.clear();
+        customCaravanIds.clear();
+        cleanupStrayEntities();
         for (ConfigManager.RouteDefinition def : configManager.getRoutes().values()) {
-            if (def.requiresPlugin != null && Bukkit.getPluginManager().getPlugin(def.requiresPlugin) == null) {
+            if (def.requiresPlugin != null && !Bukkit.getPluginManager().isPluginEnabled(def.requiresPlugin)) {
                 plugin.getLogger().warning("Skipping caravan route '" + def.id + "' — requires plugin '"
                         + def.requiresPlugin + "' which isn't installed.");
                 continue;
@@ -71,6 +86,17 @@ public class CaravanManager {
             List<MarketItem> items = configManager.freshItemsFor(def.specialty);
             Caravan caravan = new Caravan(def.id, def.displayName, def.specialty, def.waypoints, items);
             caravans.add(caravan);
+        }
+        for (ConfigManager.RouteDefinition def : customRouteStore.load()) {
+            if (configManager.getRoutes().containsKey(def.id)) {
+                plugin.getLogger().warning("Custom route '" + def.id
+                        + "' has the same id as a config.yml route — skipping the custom one.");
+                continue;
+            }
+            List<MarketItem> items = configManager.freshItemsFor(def.specialty);
+            Caravan caravan = new Caravan(def.id, def.displayName, def.specialty, def.waypoints, items);
+            caravans.add(caravan);
+            customCaravanIds.add(def.id);
         }
         dataStore.applyTo(caravans);
         for (Caravan caravan : caravans) {
@@ -98,7 +124,36 @@ public class CaravanManager {
     // Entity lifecycle
     // ---------------------------------------------------------------
 
+    /**
+     * Removes any leftover villager tagged as a caravan from every loaded
+     * world before spawning fresh ones. This is the fix for caravans
+     * "spawning infinitely": entities used to be marked persistent with
+     * no tag and no cleanup, so any restart that skipped a clean
+     * onDisable (crash, /stop mid-tick, /reload) left the old NPCs saved
+     * in the world forever while initialize() spawned new ones on top —
+     * duplicates piled up across restarts. Entities are no longer
+     * persistent either (see spawnEntity), so this is now mostly a
+     * one-time cleanup for anyone upgrading from an older build.
+     */
+    private void cleanupStrayEntities() {
+        int removed = 0;
+        for (World world : Bukkit.getWorlds()) {
+            for (Entity entity : world.getEntities()) {
+                if (entity.getPersistentDataContainer().has(caravanTagKey, PersistentDataType.STRING)) {
+                    entity.remove();
+                    removed++;
+                }
+            }
+        }
+        if (removed > 0) {
+            plugin.getLogger().info("Cleaned up " + removed + " leftover caravan NPC(s) from previous run(s).");
+        }
+    }
+
     private void spawnEntity(Caravan caravan) {
+        if (caravan.getWaypoints().isEmpty()) {
+            return; // newly created custom route with no waypoints yet
+        }
         Waypoint wp = caravan.getCurrentWaypoint();
         Location loc = wp.toLocation();
         if (loc == null || loc.getWorld() == null) {
@@ -110,7 +165,12 @@ public class CaravanManager {
         // of standing frozen — it just won't path off toward the next
         // waypoint until we flip it into TRAVELING state.
         villager.setInvulnerable(true);
-        villager.setPersistent(true);
+        // NOT persistent: we fully own this entity's lifecycle (spawn/despawn
+        // tied to plugin state, position saved separately in caravan-state.yml)
+        // so it must never survive outside the plugin managing it — that's
+        // exactly what caused duplicate caravans to pile up across restarts.
+        villager.setPersistent(false);
+        villager.getPersistentDataContainer().set(caravanTagKey, PersistentDataType.STRING, caravan.getId());
         villager.customName(caravan.getDisplayNameComponent());
         villager.setCustomNameVisible(true);
         villager.setVillagerType(Villager.Type.PLAINS);
@@ -149,6 +209,7 @@ public class CaravanManager {
 
     private void tickMarketDay() {
         for (Caravan caravan : caravans) {
+            if (caravan.getWaypoints().isEmpty()) continue;
             if (caravan.getState() == Caravan.State.AT_MARKET) {
                 caravan.incrementDaysAtStop();
                 restock(caravan);
@@ -197,6 +258,7 @@ public class CaravanManager {
 
     private void tickMovement() {
         for (Caravan caravan : caravans) {
+            if (caravan.getWaypoints().isEmpty()) continue;
             if (caravan.getState() != Caravan.State.TRAVELING) continue;
 
             Waypoint destination = caravan.getNextWaypoint();
@@ -210,7 +272,8 @@ public class CaravanManager {
                 var world = start.getWorld();
                 Villager villager = (Villager) world.spawnEntity(start, EntityType.VILLAGER);
                 villager.setInvulnerable(false);
-                villager.setPersistent(true);
+                villager.setPersistent(false);
+                villager.getPersistentDataContainer().set(caravanTagKey, PersistentDataType.STRING, caravan.getId());
                 Component travelingName = Component.text()
                         .append(caravan.getDisplayNameComponent())
                         .append(Component.text(" (traveling)").color(NamedTextColor.YELLOW))
@@ -256,6 +319,7 @@ public class CaravanManager {
 
     /** Manually force a caravan to depart immediately (admin command). */
     public void forceMove(Caravan caravan) {
+        if (caravan.getWaypoints().size() < 2) return; // needs at least 2 stops to travel between
         if (caravan.getState() == Caravan.State.AT_MARKET) {
             departCaravan(caravan);
         }
@@ -291,5 +355,95 @@ public class CaravanManager {
             }
         }
         return title;
+    }
+
+    /**
+     * A player's customer level at this specific caravan (1 to
+     * max-customer-level), based on how much they've bought here.
+     * Item levels above this are locked — this is what actually gates
+     * item access; previously nothing did, so any player could buy any
+     * level-5 item on their very first visit.
+     */
+    public int getCustomerLevel(Caravan caravan, UUID player) {
+        int purchases = caravan.getPurchaseCount(player);
+        int perLevel = Math.max(1, configManager.getPurchasesPerCustomerLevel());
+        int level = 1 + (purchases / perLevel);
+        return Math.min(configManager.getMaxCustomerLevel(), level);
+    }
+
+    /** Purchases still needed to reach the next customer level (0 if already at max). */
+    public int getPurchasesToNextLevel(Caravan caravan, UUID player) {
+        int currentLevel = getCustomerLevel(caravan, player);
+        if (currentLevel >= configManager.getMaxCustomerLevel()) {
+            return 0;
+        }
+        int perLevel = Math.max(1, configManager.getPurchasesPerCustomerLevel());
+        int purchases = caravan.getPurchaseCount(player);
+        int nextThreshold = currentLevel * perLevel;
+        return Math.max(0, nextThreshold - purchases);
+    }
+
+    // ---------------------------------------------------------------
+    // Owner-created routes (server owners building their own caravans
+    // in-game, separate from anything defined in config.yml)
+    // ---------------------------------------------------------------
+
+    public boolean isCustomCaravan(String id) {
+        return customCaravanIds.contains(id);
+    }
+
+    public List<Caravan> getCustomCaravans() {
+        return caravans.stream().filter(c -> customCaravanIds.contains(c.getId())).toList();
+    }
+
+    /** True if the id is free to use (not a config.yml route, not an existing custom one). */
+    public boolean isIdAvailable(String id) {
+        return getById(id) == null && !configManager.getRoutes().containsKey(id);
+    }
+
+    /**
+     * Creates a new owner-built caravan with no waypoints yet — it won't
+     * actually spawn an NPC until addWaypoint gives it somewhere to be.
+     * `specialty` can be any known specialty from config.yml for a
+     * starter inventory, or anything else (e.g. "custom") for an empty
+     * shop the owner fills in entirely through the editor GUI.
+     */
+    public Caravan createCustomCaravan(String id, String displayName, String specialty) {
+        List<MarketItem> items = configManager.freshItemsFor(specialty);
+        Caravan caravan = new Caravan(id, displayName, specialty, new ArrayList<>(), items);
+        caravans.add(caravan);
+        customCaravanIds.add(id);
+        customRouteStore.save(getCustomCaravans());
+        return caravan;
+    }
+
+    /** Adds a waypoint to a custom caravan, spawning it immediately if this is its first stop. */
+    public void addWaypoint(Caravan caravan, Waypoint waypoint) {
+        boolean wasEmpty = caravan.getWaypoints().isEmpty();
+        caravan.getWaypoints().add(waypoint);
+        if (wasEmpty) {
+            spawnEntity(caravan);
+        }
+        customRouteStore.save(getCustomCaravans());
+    }
+
+    /** Removes a waypoint from a custom caravan, despawning it if none are left. */
+    public void removeWaypoint(Caravan caravan, int index) {
+        caravan.getWaypoints().remove(index);
+        if (caravan.getWaypoints().isEmpty()) {
+            despawnEntity(caravan);
+            caravan.setCurrentWaypointIndex(0);
+        } else if (caravan.getCurrentWaypointIndex() >= caravan.getWaypoints().size()) {
+            caravan.setCurrentWaypointIndex(0);
+        }
+        customRouteStore.save(getCustomCaravans());
+    }
+
+    /** Permanently removes a custom caravan: despawns it, drops it from the list, and un-persists it. */
+    public void deleteCustomCaravan(Caravan caravan) {
+        despawnEntity(caravan);
+        caravans.remove(caravan);
+        customCaravanIds.remove(caravan.getId());
+        customRouteStore.save(getCustomCaravans());
     }
 }

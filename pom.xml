@@ -3,7 +3,7 @@
 
     <groupId>studio.plugglab</groupId>
     <artifactId>migrating-markets</artifactId>
-    <version>1.0.0</version>
+    <version>2.1.0</version>
     <packaging>jar</packaging>
 
     <name>MigratingMarkets</name>

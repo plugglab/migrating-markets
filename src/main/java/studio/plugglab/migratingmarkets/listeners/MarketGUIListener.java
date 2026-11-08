@@ -67,6 +67,15 @@ public class MarketGUIListener implements Listener {
     }
 
     private void handleBuy(Player player, Caravan caravan, MarketItem item, int requested) {
+        int customerLevel = caravanManager.getCustomerLevel(caravan, player.getUniqueId());
+        if (item.getLevel() > customerLevel) {
+            int needed = caravanManager.getPurchasesToNextLevel(caravan, player.getUniqueId());
+            player.sendMessage(Component.text("This is a level " + item.getLevel() + " item — you're a level "
+                    + customerLevel + " customer here. Buy " + needed + " more item(s) from this caravan to level up.")
+                    .color(NamedTextColor.RED));
+            return;
+        }
+
         int quantity = Math.min(requested, item.getCurrentStock());
         if (quantity <= 0) {
             player.sendMessage(Component.text("Out of stock — check back after the next market day.")
@@ -96,7 +105,7 @@ public class MarketGUIListener implements Listener {
                 return;
             }
         } else if (item.isCommandItem()) {
-            if (org.bukkit.Bukkit.getPluginManager().getPlugin(configManager.getLuckyPluginName()) == null) {
+            if (!org.bukkit.Bukkit.getPluginManager().isPluginEnabled(configManager.getLuckyPluginName())) {
                 player.sendMessage(Component.text("The bridged plugin isn't installed on this server.")
                         .color(NamedTextColor.RED));
                 economy.deposit(player, totalCost); // refund since we can't deliver
@@ -110,6 +119,7 @@ public class MarketGUIListener implements Listener {
         }
 
         item.onBought(quantity, configManager.getPriceShiftPerTrade(), configManager.getMaxPriceMultiplier());
+        caravan.addPurchases(player.getUniqueId(), quantity);
         player.sendMessage(Component.text("Bought " + quantity + "x for " + economy.format(totalCost) + ".")
                 .color(NamedTextColor.GREEN));
     }
@@ -150,6 +160,7 @@ public class MarketGUIListener implements Listener {
 
     private void refreshSlot(Inventory inventory, int slot, MarketItem item, Caravan caravan, Player player) {
         double discount = caravanManager.getEscortDiscount(caravan, player.getUniqueId());
-        inventory.setItem(slot, MarketGUI.buildItemStack(item, discount, economy, luckyBlockBridge));
+        int customerLevel = caravanManager.getCustomerLevel(caravan, player.getUniqueId());
+        inventory.setItem(slot, MarketGUI.buildItemStack(item, discount, economy, luckyBlockBridge, customerLevel));
     }
 }

@@ -19,10 +19,10 @@ import org.bukkit.Material;
 public class MarketItem {
 
     private final Material material;
-    private final double basePrice;
-    private final String category;
-    private final int level;
-    private final int maxStock;
+    private double basePrice;
+    private String category;
+    private int level;
+    private int maxStock;
     private final String giveCommand; // null for normal items — generic command-bridge fallback
     private final String luckyRarity; // null for normal items — real LuckyBlock API rarity (COMMON/RARE/EPIC/LEGENDARY)
 
@@ -63,6 +63,26 @@ public class MarketItem {
 
     public int getMaxStock() {
         return maxStock;
+    }
+
+    /** Admin edit: change the base price (e.g. via /caravanadmin setprice). */
+    public void setBasePrice(double basePrice) {
+        this.basePrice = basePrice;
+    }
+
+    /** Admin edit: change the category label shown in the GUI. */
+    public void setCategory(String category) {
+        this.category = category;
+    }
+
+    /**
+     * Admin edit: change the level, recomputing the stock cap from the
+     * given stock-per-level setting and clamping current stock to fit.
+     */
+    public void setLevel(int level, int stockPerLevel) {
+        this.level = Math.max(1, level);
+        this.maxStock = Math.max(1, this.level * stockPerLevel);
+        this.currentStock = Math.min(currentStock, maxStock);
     }
 
     public int getCurrentStock() {

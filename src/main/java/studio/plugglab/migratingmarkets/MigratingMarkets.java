@@ -4,6 +4,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import studio.plugglab.migratingmarkets.caravan.CaravanManager;
 import studio.plugglab.migratingmarkets.commands.CaravanAdminCommand;
 import studio.plugglab.migratingmarkets.commands.MarketCommand;
+import studio.plugglab.migratingmarkets.data.CustomRouteStore;
 import studio.plugglab.migratingmarkets.data.DataStore;
 import studio.plugglab.migratingmarkets.economy.EconomyProvider;
 import studio.plugglab.migratingmarkets.economy.EmeraldEconomyProvider;
@@ -11,6 +12,7 @@ import studio.plugglab.migratingmarkets.economy.VaultEconomyProvider;
 import studio.plugglab.migratingmarkets.listeners.CaravanInteractListener;
 import studio.plugglab.migratingmarkets.listeners.EscortListener;
 import studio.plugglab.migratingmarkets.listeners.MarketGUIListener;
+import studio.plugglab.migratingmarkets.listeners.ShopEditorListener;
 import studio.plugglab.migratingmarkets.luckyblock.LuckyBlockBridge;
 import studio.plugglab.migratingmarkets.util.ConfigManager;
 
@@ -35,7 +37,8 @@ public class MigratingMarkets extends JavaPlugin {
         luckyBlockBridge = new LuckyBlockBridge();
 
         dataStore = new DataStore(this);
-        caravanManager = new CaravanManager(this, configManager, dataStore);
+        CustomRouteStore customRouteStore = new CustomRouteStore(this);
+        caravanManager = new CaravanManager(this, configManager, dataStore, customRouteStore);
         caravanManager.initialize();
 
         getServer().getPluginManager().registerEvents(
@@ -44,17 +47,24 @@ public class MigratingMarkets extends JavaPlugin {
                 new MarketGUIListener(caravanManager, configManager, economyProvider, luckyBlockBridge), this);
         getServer().getPluginManager().registerEvents(
                 new EscortListener(caravanManager, configManager), this);
+        getServer().getPluginManager().registerEvents(
+                new ShopEditorListener(configManager), this);
 
         MarketCommand marketCommand = new MarketCommand(caravanManager, configManager, economyProvider, luckyBlockBridge);
         getCommand("market").setExecutor(marketCommand);
         getCommand("market").setTabCompleter(marketCommand);
 
-        CaravanAdminCommand adminCommand = new CaravanAdminCommand(caravanManager);
+        CaravanAdminCommand adminCommand = new CaravanAdminCommand(caravanManager, configManager);
         getCommand("caravanadmin").setExecutor(adminCommand);
         getCommand("caravanadmin").setTabCompleter(adminCommand);
 
         if (luckyBlockBridge.isAvailable()) {
             getLogger().info("Lucky-block bridge active — found '" + configManager.getLuckyPluginName() + "'.");
+        } else {
+            getLogger().warning("Lucky-block bridge inactive — LuckyBlockAPI.getOrNull() returned null. "
+                    + "The fortune-caravan route (requires-plugin: " + configManager.getLuckyPluginName()
+                    + ") will not spawn. Check /plugins for the exact name of your installed lucky-block plugin "
+                    + "and make sure it matches lucky-block-bridge.plugin-name in config.yml.");
         }
 
         getLogger().info("MigratingMarkets enabled — " + caravanManager.getCaravans().size()
