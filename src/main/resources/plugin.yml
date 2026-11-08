@@ -1,11 +1,11 @@
 name: MigratingMarkets
-version: '1.0.0'
+version: '2.1.0'
 main: studio.plugglab.migratingmarkets.MigratingMarkets
 api-version: '1.21'
 author: PluggLab Studio
 description: Advanced traveling caravan market system with dynamic pricing, escort reputation, and multi-specialty NPC caravans.
 website: https://plugglab.studio
-softdepend: [Vault, LuckyBlock]
+softdepend: [Vault, LuckyEngine]
 
 commands:
   market:

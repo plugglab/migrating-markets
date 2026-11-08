@@ -38,11 +38,12 @@ public class MarketGUI {
 
         List<MarketItem> items = caravan.getInventory();
         double discount = caravanManager.getEscortDiscount(caravan, viewer.getUniqueId());
+        int customerLevel = caravanManager.getCustomerLevel(caravan, viewer.getUniqueId());
 
         int slot = 0;
         for (MarketItem item : items) {
             if (slot >= 45) break;
-            inv.setItem(slot, buildItemStack(item, discount, economy, luckyBlockBridge));
+            inv.setItem(slot, buildItemStack(item, discount, economy, luckyBlockBridge, customerLevel));
             slot++;
         }
 
@@ -60,14 +61,22 @@ public class MarketGUI {
         infoMeta.displayName(Component.text("Your Standing").color(NamedTextColor.GREEN)
                 .decoration(TextDecoration.ITALIC, false));
         List<Component> lore = new ArrayList<>();
+        lore.add(Component.text("Customer level: " + customerLevel).color(NamedTextColor.AQUA)
+                .decoration(TextDecoration.ITALIC, false));
+        int toNext = caravanManager.getPurchasesToNextLevel(caravan, viewer.getUniqueId());
+        if (toNext > 0) {
+            lore.add(Component.text("(" + toNext + " more purchase(s) to level up)").color(NamedTextColor.DARK_GRAY)
+                    .decoration(TextDecoration.ITALIC, false));
+        } else {
+            lore.add(Component.text("(max level here)").color(NamedTextColor.DARK_GRAY)
+                    .decoration(TextDecoration.ITALIC, false));
+        }
         if (title2 != null) {
             lore.add(Component.text(title2).color(NamedTextColor.GOLD).decoration(TextDecoration.ITALIC, false));
             lore.add(Component.text(String.format("%.0f%% discount active", discount * 100))
                     .color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
         } else {
-            lore.add(Component.text("Defend this caravan from mobs").color(NamedTextColor.GRAY)
-                    .decoration(TextDecoration.ITALIC, false));
-            lore.add(Component.text("while it travels to earn discounts.").color(NamedTextColor.GRAY)
+            lore.add(Component.text("Defend this caravan from mobs to earn discounts.").color(NamedTextColor.GRAY)
                     .decoration(TextDecoration.ITALIC, false));
         }
         infoMeta.lore(lore);
@@ -78,7 +87,8 @@ public class MarketGUI {
     }
 
     public static ItemStack buildItemStack(MarketItem item, double discount, EconomyProvider economy,
-                                            LuckyBlockBridge luckyBlockBridge) {
+                                            LuckyBlockBridge luckyBlockBridge, int customerLevel) {
+        boolean locked = item.getLevel() > customerLevel;
         ItemStack stack = null;
         boolean usedRealLuckyItem = false;
         if (item.isLuckyItem() && luckyBlockBridge != null) {
@@ -99,7 +109,8 @@ public class MarketGUI {
             if (existingLore != null) lore.addAll(existingLore);
             lore.add(Component.empty());
         } else {
-            Component name = Component.text(prettyName(item.getMaterial())).color(levelColor(item.getLevel()))
+            Component name = Component.text((locked ? "🔒 " : "") + prettyName(item.getMaterial()))
+                    .color(locked ? NamedTextColor.DARK_GRAY : levelColor(item.getLevel()))
                     .decoration(TextDecoration.ITALIC, false);
             if (item.isCommandItem()) {
                 name = name.append(Component.text(" ⚡").color(NamedTextColor.LIGHT_PURPLE));
@@ -110,6 +121,15 @@ public class MarketGUI {
         double price = item.getCurrentPrice() * (1 - discount);
         lore.add(Component.text("Level " + item.getLevel() + " · " + item.getCategory())
                 .color(NamedTextColor.DARK_GRAY).decoration(TextDecoration.ITALIC, false));
+        if (locked) {
+            lore.add(Component.text("Locked — requires customer level " + item.getLevel())
+                    .color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
+            lore.add(Component.text("You are level " + customerLevel + " here. Keep buying to level up!")
+                    .color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
+            meta.lore(lore);
+            stack.setItemMeta(meta);
+            return stack;
+        }
         lore.add(Component.text("Stock: " + item.getCurrentStock() + " / " + item.getMaxStock())
                 .color(item.getCurrentStock() > 0 ? NamedTextColor.GRAY : NamedTextColor.RED)
                 .decoration(TextDecoration.ITALIC, false));

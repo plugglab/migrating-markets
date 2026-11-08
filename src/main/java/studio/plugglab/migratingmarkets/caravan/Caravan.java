@@ -27,6 +27,7 @@ public class Caravan {
     private final List<Waypoint> waypoints;
     private final List<MarketItem> inventory;
     private final Map<UUID, Integer> reputation = new HashMap<>();
+    private final Map<UUID, Integer> purchaseCounts = new HashMap<>();
 
     private int currentWaypointIndex = 0;
     private State state = State.AT_MARKET;
@@ -133,5 +134,18 @@ public class Caravan {
 
     public Map<UUID, Integer> getReputationMap() {
         return reputation;
+    }
+
+    /** How many units this player has ever bought from this caravan — drives their customer level. */
+    public int getPurchaseCount(UUID player) {
+        return purchaseCounts.getOrDefault(player, 0);
+    }
+
+    public void addPurchases(UUID player, int amount) {
+        purchaseCounts.merge(player, amount, Integer::sum);
+    }
+
+    public Map<UUID, Integer> getPurchaseCountMap() {
+        return purchaseCounts;
     }
 }
