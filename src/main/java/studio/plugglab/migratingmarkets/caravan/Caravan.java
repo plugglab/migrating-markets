@@ -5,10 +5,14 @@ import studio.plugglab.migratingmarkets.market.MarketItem;
 import studio.plugglab.migratingmarkets.util.ChatColorUtil;
 import studio.plugglab.migratingmarkets.util.Waypoint;
 
-import java.util.HashMap;
+import org.bukkit.Location;
+
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Represents one traveling market caravan: its route, current state,
@@ -26,13 +30,21 @@ public class Caravan {
     private final String specialty;
     private final List<Waypoint> waypoints;
     private final List<MarketItem> inventory;
-    private final Map<UUID, Integer> reputation = new HashMap<>();
-    private final Map<UUID, Integer> purchaseCounts = new HashMap<>();
+    // Concurrent: PlaceholderAPI placeholders may be requested off the main thread.
+    private final Map<UUID, Integer> reputation = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> purchaseCounts = new ConcurrentHashMap<>();
+    /** Identity keys of config items an admin removed, so they don't reappear from config.yml. */
+    private final Set<String> removedItemKeys = new LinkedHashSet<>();
 
     private int currentWaypointIndex = 0;
     private State state = State.AT_MARKET;
     private int daysAtCurrentStop = 0;
     private UUID entityId;
+
+    // Travel bookkeeping (TRAVELING state only).
+    private Location travelLocation;
+    private long travelStartedAt;
+    private int stuckTicks;
 
     public Caravan(String id, String displayName, String specialty,
                     List<Waypoint> waypoints, List<MarketItem> inventory) {
@@ -71,6 +83,39 @@ public class Caravan {
 
     public List<MarketItem> getInventory() {
         return inventory;
+    }
+
+    public boolean hasWaypoints() {
+        return !waypoints.isEmpty();
+    }
+
+    public Set<String> getRemovedItemKeys() {
+        return removedItemKeys;
+    }
+
+    /** Last known position while traveling (entity position, or the simulated one while off-screen). */
+    public Location getTravelLocation() {
+        return travelLocation == null ? null : travelLocation.clone();
+    }
+
+    public void setTravelLocation(Location travelLocation) {
+        this.travelLocation = travelLocation == null ? null : travelLocation.clone();
+    }
+
+    public long getTravelStartedAt() {
+        return travelStartedAt;
+    }
+
+    public void setTravelStartedAt(long travelStartedAt) {
+        this.travelStartedAt = travelStartedAt;
+    }
+
+    public int getStuckTicks() {
+        return stuckTicks;
+    }
+
+    public void setStuckTicks(int stuckTicks) {
+        this.stuckTicks = stuckTicks;
     }
 
     public Waypoint getCurrentWaypoint() {

@@ -2,10 +2,12 @@ package studio.plugglab.migratingmarkets.market;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import studio.plugglab.migratingmarkets.caravan.Caravan;
@@ -15,16 +17,19 @@ import java.util.List;
 
 /**
  * Live in-game shop editor. Existing items show their slot number (for
- * use with /caravanadmin setprice|setlevel|removeitem) and can be
- * removed with a right-click. Empty slots accept a new item: hold
- * something in your main hand and left-click an empty slot to add it
- * as a level-1, 10-price starter entry — then fine-tune it with
- * /caravanadmin setprice / setlevel.
+ * use with /caravanadmin setprice|setlevel|removeitem).
+ * - Left-click an empty slot while holding an item: add it (price 10, level 1).
+ * - Right-click an item: remove it.
+ * - Shift + left-click an item: cycle its level (1 → max → 1).
+ * - Number key 1-9 while hovering an item: set its level directly.
+ * - Shift + right-click an item: restock it to full.
  */
 public class ShopEditorGUI {
 
     public static final int SIZE = 54;
     public static final int MAX_ITEMS = 45;
+    public static final int SLOT_INFO = 49;
+    public static final int SLOT_CLOSE = 53;
 
     public static Inventory build(Caravan caravan) {
         ShopEditorHolder holder = new ShopEditorHolder(caravan);
@@ -33,7 +38,12 @@ public class ShopEditorGUI {
                 .build();
         Inventory inv = Bukkit.createInventory(holder, SIZE, title);
         holder.setInventory(inv);
+        render(inv, caravan);
+        return inv;
+    }
 
+    public static void render(Inventory inv, Caravan caravan) {
+        inv.clear();
         List<MarketItem> items = caravan.getInventory();
         for (int i = 0; i < items.size() && i < MAX_ITEMS; i++) {
             inv.setItem(i, buildEditorStack(items.get(i), i));
@@ -49,57 +59,56 @@ public class ShopEditorGUI {
 
         ItemStack info = new ItemStack(Material.WRITABLE_BOOK);
         ItemMeta infoMeta = info.getItemMeta();
-        infoMeta.displayName(Component.text("How to edit").color(NamedTextColor.GOLD)
-                .decoration(TextDecoration.ITALIC, false));
+        infoMeta.displayName(text("How to edit", NamedTextColor.GOLD));
         List<Component> lore = new ArrayList<>();
-        lore.add(Component.text("Left-click empty slot: add held item").color(NamedTextColor.GRAY)
-                .decoration(TextDecoration.ITALIC, false));
-        lore.add(Component.text("  (starts at 10 price, level 1)").color(NamedTextColor.DARK_GRAY)
-                .decoration(TextDecoration.ITALIC, false));
-        lore.add(Component.text("Right-click filled slot: remove it").color(NamedTextColor.GRAY)
-                .decoration(TextDecoration.ITALIC, false));
-        lore.add(Component.text("Then use /caravanadmin setprice|setlevel").color(NamedTextColor.GRAY)
-                .decoration(TextDecoration.ITALIC, false));
-        lore.add(Component.text("<id> <slot> <value> to fine-tune.").color(NamedTextColor.GRAY)
-                .decoration(TextDecoration.ITALIC, false));
+        lore.add(text("Left-click empty slot: add held item", NamedTextColor.GRAY));
+        lore.add(text("  (starts at 10 price, level 1)", NamedTextColor.DARK_GRAY));
+        lore.add(text("Right-click item: remove it", NamedTextColor.GRAY));
+        lore.add(text("Shift + left-click item: cycle level", NamedTextColor.GRAY));
+        lore.add(text("Number key 1-9 on item: set level", NamedTextColor.GRAY));
+        lore.add(text("Shift + right-click item: restock it", NamedTextColor.GRAY));
+        lore.add(Component.empty());
+        lore.add(text("Prices: /caravanadmin setprice " + caravan.getId() + " <slot> <price>", NamedTextColor.DARK_GRAY));
+        lore.add(text(items.size() + " / " + MAX_ITEMS + " slots used", NamedTextColor.DARK_GRAY));
         infoMeta.lore(lore);
         info.setItemMeta(infoMeta);
-        inv.setItem(49, info);
+        inv.setItem(SLOT_INFO, info);
 
-        return inv;
+        ItemStack close = new ItemStack(Material.BARRIER);
+        ItemMeta closeMeta = close.getItemMeta();
+        closeMeta.displayName(text("Close", NamedTextColor.RED));
+        close.setItemMeta(closeMeta);
+        inv.setItem(SLOT_CLOSE, close);
     }
 
     private static ItemStack buildEditorStack(MarketItem item, int slot) {
         ItemStack stack = new ItemStack(item.getMaterial());
         ItemMeta meta = stack.getItemMeta();
-        meta.displayName(Component.text("[" + slot + "] " + prettyName(item.getMaterial()))
-                .color(NamedTextColor.AQUA).decoration(TextDecoration.ITALIC, false));
+        if (meta == null) return stack;
+        meta.displayName(text("[" + slot + "] " + MarketGUI.prettyName(item.getMaterial()), NamedTextColor.AQUA));
+        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ADDITIONAL_TOOLTIP);
 
         List<Component> lore = new ArrayList<>();
-        lore.add(Component.text("Level " + item.getLevel() + " · " + item.getCategory())
-                .color(NamedTextColor.DARK_GRAY).decoration(TextDecoration.ITALIC, false));
-        lore.add(Component.text("Base price: " + item.getBasePrice()).color(NamedTextColor.GREEN)
-                .decoration(TextDecoration.ITALIC, false));
-        lore.add(Component.text("Stock cap: " + item.getMaxStock()).color(NamedTextColor.GRAY)
-                .decoration(TextDecoration.ITALIC, false));
+        lore.add(text("Level " + item.getLevel() + " · " + item.getCategory(), MarketGUI.levelColor(item.getLevel())));
+        lore.add(text("Base price: " + item.getBasePrice() + "  (now " + item.getCurrentPrice() + ")", NamedTextColor.GREEN));
+        lore.add(text("Stock: " + item.getCurrentStock() + " / " + item.getMaxStock(), NamedTextColor.GRAY));
         if (item.isBridgedItem()) {
-            lore.add(Component.text(item.isLuckyItem() ? "Lucky rarity: " + item.getLuckyRarity() : "Bridged (command item)")
-                    .color(NamedTextColor.LIGHT_PURPLE).decoration(TextDecoration.ITALIC, false));
+            lore.add(text(item.isLuckyItem() ? "Lucky rarity: " + item.getLuckyRarity() : "Bridged (command item)",
+                    NamedTextColor.LIGHT_PURPLE));
+        }
+        if (item.isCustomized()) {
+            lore.add(text("Edited in game (overrides config.yml)", NamedTextColor.DARK_GRAY));
         }
         lore.add(Component.empty());
-        lore.add(Component.text("Right-click to remove").color(NamedTextColor.RED)
-                .decoration(TextDecoration.ITALIC, false));
+        lore.add(text("Right-click to remove", NamedTextColor.RED));
+        lore.add(text("Shift-left: cycle level · 1-9: set level", NamedTextColor.GRAY));
+        lore.add(text("Shift-right: restock", NamedTextColor.GRAY));
         meta.lore(lore);
         stack.setItemMeta(meta);
         return stack;
     }
 
-    private static String prettyName(Material material) {
-        String[] parts = material.name().split("_");
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            sb.append(part.charAt(0)).append(part.substring(1).toLowerCase()).append(" ");
-        }
-        return sb.toString().trim();
+    private static Component text(String s, TextColor color) {
+        return Component.text(s).color(color).decoration(TextDecoration.ITALIC, false);
     }
 }
