@@ -1,5 +1,5 @@
 # MigratingMarkets
-**v2.1.0 — by PluggLab Studio** — for Paper/Spigot 1.21.x
+**v2.1.0 — by PluggLab Studio** — for Paper and Purpur 1.21.x (not Spigot/Bukkit)
 
 An advanced traveling-caravan economy plugin. Instead of a static shop
 or a merchant that just teleports on a timer, each caravan is a real
