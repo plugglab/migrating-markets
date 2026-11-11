@@ -48,7 +48,8 @@ None of them are required.
 Admins get `/caravanadmin` for reload, list, info, restock, goto, forcemove, teleport, the shop editor and making their own routes. The full list is in the docs and on GitHub.
 
 ## Supports
-Paper / Spigot 1.21.x
+Paper and Purpur 1.21.x (and other Paper forks like Pufferfish).
+Does **not** work on Spigot, Bukkit or Folia. It uses Paper-only features for the caravan walking and messages.
 
 ## Links
 - Website: https://plugglab.pl/migratingmarkets/
